@@ -15,11 +15,11 @@ permissions:
 jobs:
   analyze:
     if: github.repository == 'Garries420/Persistent-Calculator'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
           build-mode: manual
@@ -34,4 +34,4 @@ jobs:
           cmd /d /c "`"$devShell`" -arch=x64 && scripts\build-release.cmd"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
