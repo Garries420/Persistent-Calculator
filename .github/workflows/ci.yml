@@ -1,0 +1,31 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run tests
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installation) { throw "Visual Studio C++ tools were not found." }
+          $devShell = Join-Path $installation "Common7\Tools\VsDevCmd.bat"
+          cmd /d /c "`"$devShell`" -arch=x64 && scripts\build-release.cmd"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload tested executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: PersistentCalculator-windows-x64
+          path: dist/PersistentCalculator.exe
+          if-no-files-found: error

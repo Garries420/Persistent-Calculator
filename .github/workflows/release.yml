@@ -1,0 +1,70 @@
+name: Build public release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-release
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    if: github.repository == 'Garries420/Persistent-Calculator'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read and validate version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION is not semantic version format." }
+          $resource = Get-Content assets/app.rc -Raw
+          $header = Get-Content src/updater.h -Raw
+          if ($resource -notmatch [regex]::Escape("`"$version\0`"")) { throw "Resource version does not match VERSION." }
+          if ($header -notmatch [regex]::Escape("L`"$version`"")) { throw "Updater version does not match VERSION." }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build and run tests
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installation) { throw "Visual Studio C++ tools were not found." }
+          $devShell = Join-Path $installation "Common7\Tools\VsDevCmd.bat"
+          cmd /d /c "`"$devShell`" -arch=x64 && scripts\build-release.cmd"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create SHA-256 file
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash dist/PersistentCalculator.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $line = "$hash  PersistentCalculator.exe`n"
+          [System.IO.File]::WriteAllText("dist/PersistentCalculator.exe.sha256", $line, [System.Text.Encoding]::ASCII)
+
+      - name: Create release when this version is new
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $tag = "v$env:VERSION"
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists; leaving its assets immutable."
+            exit 0
+          }
+          gh release create $tag `
+            dist/PersistentCalculator.exe `
+            dist/PersistentCalculator.exe.sha256 `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "Persistent Calculator $env:VERSION" `
+            --notes-file RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

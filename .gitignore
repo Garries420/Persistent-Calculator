@@ -1,0 +1,22 @@
+# Local builds and compiler caches
+/build/
+/dist/
+*.obj
+*.pdb
+*.ilk
+*.res
+*.exe
+
+# Local user data must never be committed
+Windows Calculator Saved History.txt
+CalculatorHistory.txt
+history.txt
+calc_history.txt
+
+# Editor and operating-system files
+.vs/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
