@@ -31,7 +31,7 @@ jobs:
           $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $installation) { throw "Visual Studio C++ tools were not found." }
           $devShell = Join-Path $installation "Common7\Tools\VsDevCmd.bat"
-          cmd /d /c "`"$devShell`" -arch=x64 && scripts\build-release.cmd"
+          cmd /c "`"$devShell`" -arch=x64 && scripts\build-release.cmd"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - uses: github/codeql-action/analyze@v4
