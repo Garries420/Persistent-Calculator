@@ -30,6 +30,7 @@ static const wchar_t *UPDATE_API_URL =
 
 static HWND g_update_popup;
 static HFONT g_update_font;
+static UINT g_update_dpi;
 static volatile LONG g_update_check_active;
 static wchar_t g_update_status[192] = L"Checking for updates…";
 
@@ -228,9 +229,74 @@ static int utf8_to_wide(const char *source, wchar_t *destination, size_t capacit
                                destination, (int)capacity) > 0;
 }
 
-static void set_popup_region(HWND popup, int width, int height) {
-    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, 12, 12);
+static UINT owner_dpi(HWND owner) {
+    UINT dpi = owner ? GetDpiForWindow(owner) : 0;
+    return dpi ? dpi : 96;
+}
+
+static int popup_scale(HWND owner, int value) {
+    return MulDiv(value, (int)owner_dpi(owner), 96);
+}
+
+static void refresh_update_font(HWND owner) {
+    LOGFONTW font;
+    UINT dpi = owner_dpi(owner);
+    if (g_update_font && g_update_dpi == dpi) return;
+    if (g_update_font) DeleteObject(g_update_font);
+    memset(&font, 0, sizeof(font));
+    font.lfHeight = -MulDiv(10, (int)dpi, 72);
+    font.lfWeight = FW_NORMAL;
+    font.lfQuality = CLEARTYPE_QUALITY;
+    wcscpy(font.lfFaceName, L"Segoe UI");
+    g_update_font = CreateFontIndirectW(&font);
+    g_update_dpi = dpi;
+}
+
+static void set_popup_region(HWND popup, int width, int height, UINT dpi) {
+    int radius = MulDiv(12, (int)dpi, 96);
+    HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1, radius, radius);
     if (region) SetWindowRgn(popup, region, TRUE);
+}
+
+static void layout_update_popup(HWND popup) {
+    HWND owner = GetParent(popup);
+    RECT owner_client;
+    RECT measure = {0, 0, 0, 0};
+    HDC dc;
+    HGDIOBJ old_font;
+    UINT dpi;
+    int margin, padding, vertical_padding, width, height, minimum_height, x, y;
+    if (!owner || !IsWindow(owner)) return;
+    dpi = owner_dpi(owner);
+    refresh_update_font(owner);
+    GetClientRect(owner, &owner_client);
+    margin = MulDiv(8, (int)dpi, 96);
+    padding = MulDiv(12, (int)dpi, 96);
+    vertical_padding = MulDiv(9, (int)dpi, 96);
+    minimum_height = MulDiv(48, (int)dpi, 96);
+    width = owner_client.right - margin * 2;
+    if (width < MulDiv(180, (int)dpi, 96)) width = MulDiv(180, (int)dpi, 96);
+    measure.right = width - padding * 2;
+    dc = GetDC(popup);
+    if (dc) {
+        old_font = SelectObject(dc, g_update_font ? g_update_font : GetStockObject(DEFAULT_GUI_FONT));
+        DrawTextW(dc, g_update_status, -1, &measure,
+                  DT_CENTER | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+        SelectObject(dc, old_font);
+        ReleaseDC(popup, dc);
+    } else {
+        measure.bottom = minimum_height - vertical_padding * 2;
+    }
+    height = measure.bottom + vertical_padding * 2;
+    if (height < minimum_height) height = minimum_height;
+    x = (owner_client.right - width) / 2;
+    y = MulDiv(56, (int)dpi, 96);
+    if (y + height > owner_client.bottom - margin)
+        y = owner_client.bottom - margin - height;
+    if (y < margin) y = margin;
+    set_popup_region(popup, width, height, dpi);
+    SetWindowPos(popup, HWND_TOP, x, y, width, height,
+                 SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
 static LRESULT CALLBACK update_popup_proc(HWND window, UINT message,
@@ -248,6 +314,9 @@ static LRESULT CALLBACK update_popup_proc(HWND window, UINT message,
                 wcsncpy(g_update_status, status, _countof(g_update_status) - 1);
                 g_update_status[_countof(g_update_status) - 1] = L'\0';
                 HeapFree(GetProcessHeap(), 0, status);
+                layout_update_popup(window);
+                ShowWindow(window, SW_SHOWNOACTIVATE);
+                SetTimer(window, UPDATE_POPUP_TIMER, UPDATE_POPUP_MILLISECONDS, NULL);
                 InvalidateRect(window, NULL, FALSE);
             }
             return 0;
@@ -276,9 +345,20 @@ static LRESULT CALLBACK update_popup_proc(HWND window, UINT message,
             old_font = SelectObject(dc, g_update_font ? g_update_font : GetStockObject(DEFAULT_GUI_FONT));
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(242, 242, 242));
-            InflateRect(&client, -12, -7);
-            DrawTextW(dc, g_update_status, -1, &client,
-                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+            {
+                RECT text_rect = client;
+                RECT measure = {0, 0, 0, 0};
+                int horizontal_padding = popup_scale(GetParent(window), 12);
+                text_rect.left += horizontal_padding;
+                text_rect.right -= horizontal_padding;
+                measure.right = text_rect.right - text_rect.left;
+                DrawTextW(dc, g_update_status, -1, &measure,
+                          DT_CENTER | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+                text_rect.top = (client.bottom - measure.bottom) / 2;
+                text_rect.bottom = text_rect.top + measure.bottom;
+                DrawTextW(dc, g_update_status, -1, &text_rect,
+                          DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
+            }
             SelectObject(dc, old_font);
             EndPaint(window, &paint);
             return 0;
@@ -290,38 +370,30 @@ static LRESULT CALLBACK update_popup_proc(HWND window, UINT message,
 static int ensure_popup(HWND owner) {
     WNDCLASSEXW window_class;
     HINSTANCE instance = GetModuleHandleW(NULL);
-    if (g_update_popup && IsWindow(g_update_popup)) return 1;
+    if (g_update_popup && IsWindow(g_update_popup)) {
+        if (GetParent(g_update_popup) != owner) SetParent(g_update_popup, owner);
+        return 1;
+    }
     memset(&window_class, 0, sizeof(window_class));
     window_class.cbSize = sizeof(window_class);
     window_class.lpfnWndProc = update_popup_proc;
     window_class.hInstance = instance;
     window_class.hCursor = LoadCursorW(NULL, IDC_ARROW);
-    window_class.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    window_class.hbrBackground = NULL;
     window_class.lpszClassName = UPDATE_POPUP_CLASS;
     RegisterClassExW(&window_class);
-    g_update_popup = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-                                     UPDATE_POPUP_CLASS, L"", WS_POPUP,
+    g_update_popup = CreateWindowExW(WS_EX_NOACTIVATE,
+                                     UPDATE_POPUP_CLASS, L"", WS_CHILD,
                                      0, 0, 300, 58, owner, NULL, instance, NULL);
     return g_update_popup != NULL;
 }
 
 static void show_update_popup(HWND owner, const wchar_t *status) {
-    RECT owner_rect;
-    UINT dpi;
-    int width, height, x, y;
     if (!ensure_popup(owner)) return;
     wcsncpy(g_update_status, status, _countof(g_update_status) - 1);
     g_update_status[_countof(g_update_status) - 1] = L'\0';
-    dpi = GetDpiForWindow(owner);
-    if (!dpi) dpi = 96;
-    width = MulDiv(300, (int)dpi, 96);
-    height = MulDiv(58, (int)dpi, 96);
-    GetWindowRect(owner, &owner_rect);
-    x = owner_rect.left + ((owner_rect.right - owner_rect.left) - width) / 2;
-    y = owner_rect.top + MulDiv(62, (int)dpi, 96);
-    set_popup_region(g_update_popup, width, height);
-    SetWindowPos(g_update_popup, HWND_TOP, x, y, width, height,
-                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    layout_update_popup(g_update_popup);
+    ShowWindow(g_update_popup, SW_SHOWNOACTIVATE);
     SetTimer(g_update_popup, UPDATE_POPUP_TIMER, UPDATE_POPUP_MILLISECONDS, NULL);
     InvalidateRect(g_update_popup, NULL, FALSE);
 }
@@ -453,13 +525,7 @@ static void start_update_check(HWND owner) {
 }
 
 void updater_initialize(HWND owner) {
-    LOGFONTW font;
-    memset(&font, 0, sizeof(font));
-    font.lfHeight = -MulDiv(10, (int)(GetDpiForWindow(owner) ? GetDpiForWindow(owner) : 96), 72);
-    font.lfWeight = FW_NORMAL;
-    font.lfQuality = CLEARTYPE_QUALITY;
-    wcscpy(font.lfFaceName, L"Segoe UI");
-    g_update_font = CreateFontIndirectW(&font);
+    refresh_update_font(owner);
     show_update_popup(owner, L"Checking GitHub securely for updates…");
     start_update_check(owner);
 }
@@ -469,11 +535,19 @@ void updater_check_now(HWND owner) {
     start_update_check(owner);
 }
 
+void updater_owner_resized(HWND owner) {
+    if (!g_update_popup || !IsWindow(g_update_popup) || GetParent(g_update_popup) != owner) return;
+    refresh_update_font(owner);
+    layout_update_popup(g_update_popup);
+    InvalidateRect(g_update_popup, NULL, FALSE);
+}
+
 void updater_shutdown(void) {
     if (g_update_font) {
         DeleteObject(g_update_font);
         g_update_font = NULL;
     }
+    g_update_dpi = 0;
     g_update_popup = NULL;
 }
 

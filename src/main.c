@@ -41,6 +41,7 @@
 #define ID_HISTORY_ITEM_BASE 500
 #define ID_NAV_STANDARD 600
 #define ID_CHECK_UPDATES 601
+#define ID_NAV_CHANGELOG 602
 #define ID_MEMORY_VALUE 700
 #define ID_ACTIVE_SCROLLBAR 800
 #define ID_HISTORY_SCROLLBAR_BASE 900
@@ -85,6 +86,7 @@ static int g_history_scroll;
 static int g_history_open;
 static int g_calculation_history_index = -1;
 static int g_nav_open;
+static int g_changelog_open;
 static int g_memory_popup;
 static int g_hot_id = -1;
 static int g_pressed_id = -1;
@@ -1056,15 +1058,24 @@ static void draw_nav_panel(HDC dc, int width, int height) {
     int panel_width = scale_px(246);
     RECT panel = {0, scale_px(50), panel_width < width ? panel_width : width, height};
     RECT caption = {scale_px(18), scale_px(62), panel.right - scale_px(10), scale_px(102)};
-    RECT standard = {scale_px(6), scale_px(110), panel.right - scale_px(6), scale_px(162)};
-    RECT updates = {scale_px(6), scale_px(174), panel.right - scale_px(6), scale_px(226)};
-    RECT version = {scale_px(18), scale_px(228), panel.right - scale_px(12), scale_px(264)};
+    RECT standard = {scale_px(6), scale_px(110), panel.right - scale_px(6), scale_px(158)};
+    RECT changelog = {scale_px(6), scale_px(166), panel.right - scale_px(6), scale_px(214)};
+    RECT updates = {scale_px(6), scale_px(222), panel.right - scale_px(6), scale_px(270)};
+    RECT version = {scale_px(18), scale_px(272), panel.right - scale_px(12), scale_px(308)};
+    COLORREF standard_fill = g_changelog_open ? COLOR_BUTTON : COLOR_PRESSED;
+    COLORREF changelog_fill = g_changelog_open ? COLOR_PRESSED : COLOR_BUTTON;
     fill_rect_color(dc, &panel, RGB(37, 42, 43));
     draw_text_color(dc, L"Calculator", caption, g_font_title, COLOR_TEXT,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    rounded_rect(dc, &standard, g_hot_id == ID_NAV_STANDARD ? COLOR_HOVER : COLOR_BUTTON, scale_px(4));
+    if (g_hot_id == ID_NAV_STANDARD) standard_fill = COLOR_HOVER;
+    rounded_rect(dc, &standard, standard_fill, scale_px(4));
     standard.left += scale_px(14);
     draw_text_color(dc, L"▣   Standard", standard, g_font_normal, COLOR_TEXT,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    if (g_hot_id == ID_NAV_CHANGELOG) changelog_fill = COLOR_HOVER;
+    rounded_rect(dc, &changelog, changelog_fill, scale_px(4));
+    changelog.left += scale_px(14);
+    draw_text_color(dc, L"▤   Changelog", changelog, g_font_normal, COLOR_TEXT,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     rounded_rect(dc, &updates, g_hot_id == ID_CHECK_UPDATES ? COLOR_HOVER : COLOR_BUTTON,
                  scale_px(4));
@@ -1074,6 +1085,50 @@ static void draw_nav_panel(HDC dc, int width, int height) {
     draw_text_color(dc, L"Version " PERSISTENT_CALCULATOR_VERSION_W, version,
                     g_font_small, COLOR_MUTED,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+}
+
+static void draw_changelog_bullet(HDC dc, int width, int top, const wchar_t *text_value) {
+    RECT bullet = {scale_px(20), top, scale_px(36), top + scale_px(60)};
+    RECT body = {scale_px(40), top, width - scale_px(18), top + scale_px(60)};
+    draw_text_color(dc, L"•", bullet, g_font_title, COLOR_EQUAL,
+                    DT_LEFT | DT_TOP | DT_SINGLELINE);
+    draw_text_color(dc, text_value, body, g_font_normal, COLOR_TEXT,
+                    DT_LEFT | DT_TOP | DT_WORDBREAK);
+}
+
+static void draw_changelog_panel(HDC dc, int width, int height) {
+    RECT panel = {0, scale_px(50), width, height};
+    RECT heading = {scale_px(18), scale_px(68), width - scale_px(18), scale_px(101)};
+    RECT version_badge = {scale_px(18), scale_px(105), scale_px(120), scale_px(135)};
+    RECT release_date = {scale_px(132), scale_px(105), width - scale_px(18), scale_px(135)};
+    RECT divider = {scale_px(18), scale_px(146), width - scale_px(18), scale_px(147)};
+    RECT previous_heading = {scale_px(20), scale_px(374), width - scale_px(18), scale_px(404)};
+    RECT previous_body = {scale_px(20), scale_px(407), width - scale_px(18), scale_px(463)};
+    RECT hint = {scale_px(18), height - scale_px(48), width - scale_px(18), height - scale_px(16)};
+    fill_rect_color(dc, &panel, COLOR_PANEL);
+    draw_text_color(dc, L"What's new", heading, g_font_title, COLOR_TEXT,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    rounded_rect(dc, &version_badge, COLOR_EQUAL, scale_px(14));
+    draw_text_color(dc, L"Version 1.0.1", version_badge, g_font_small, RGB(25, 45, 55),
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    draw_text_color(dc, L"20 July 2026", release_date, g_font_small, COLOR_MUTED,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    fill_rect_color(dc, &divider, COLOR_HOVER);
+    draw_changelog_bullet(dc, width, scale_px(162),
+                          L"Update notices now stay attached to the calculator window when it moves.");
+    draw_changelog_bullet(dc, width, scale_px(230),
+                          L"Update messages wrap cleanly so every word remains visible.");
+    draw_changelog_bullet(dc, width, scale_px(298),
+                          L"Added this built-in changelog screen to the navigation menu.");
+    draw_text_color(dc, L"Version 1.0.0", previous_heading, g_font_normal, COLOR_TEXT,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    draw_text_color(dc,
+                    L"Initial public release with permanent history, full expression chains, and verified automatic updates.",
+                    previous_body, g_font_small, COLOR_MUTED,
+                    DT_LEFT | DT_TOP | DT_WORDBREAK);
+    draw_text_color(dc, L"Menu  →  Standard returns to the calculator.", hint,
+                    g_font_small, COLOR_MUTED,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 static void paint_window(HWND window, HDC target_dc) {
@@ -1099,36 +1154,44 @@ static void paint_window(HWND window, HDC target_dc) {
     title.top = scale_px(5);
     title.right = width - scale_px(54);
     title.bottom = scale_px(49);
-    draw_text_color(dc, L"Standard", title, g_font_title, COLOR_TEXT,
+    draw_text_color(dc, g_changelog_open ? L"Changelog" : L"Standard",
+                    title, g_font_title, COLOR_TEXT,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    draw_history_icon(dc, header_history_rect(width), g_hot_id == ID_HISTORY ? COLOR_TEXT : COLOR_MUTED);
+    if (!g_changelog_open)
+        draw_history_icon(dc, header_history_rect(width),
+                          g_hot_id == ID_HISTORY ? COLOR_TEXT : COLOR_MUTED);
 
-    expression_rect.left = scale_px(14);
-    expression_rect.right = width - scale_px(13);
-    expression_rect.top = scale_px(51);
-    expression_rect.bottom = scale_px(74);
-    ascii_to_pretty(g_calc.expression, expression, _countof(expression));
-    if (wcscmp(expression, g_last_active_expression) != 0) {
-        g_active_scroll_x = 0;
-        wcsncpy(g_last_active_expression, expression, _countof(g_last_active_expression) - 1);
-        g_last_active_expression[_countof(g_last_active_expression) - 1] = L'\0';
+    if (g_changelog_open) {
+        g_active_scroll_max = 0;
+        draw_changelog_panel(dc, width, height);
+    } else {
+        expression_rect.left = scale_px(14);
+        expression_rect.right = width - scale_px(13);
+        expression_rect.top = scale_px(51);
+        expression_rect.bottom = scale_px(74);
+        ascii_to_pretty(g_calc.expression, expression, _countof(expression));
+        if (wcscmp(expression, g_last_active_expression) != 0) {
+            g_active_scroll_x = 0;
+            wcsncpy(g_last_active_expression, expression, _countof(g_last_active_expression) - 1);
+            g_last_active_expression[_countof(g_last_active_expression) - 1] = L'\0';
+        }
+        g_active_scroll_track.left = expression_rect.left;
+        g_active_scroll_track.right = expression_rect.right;
+        g_active_scroll_track.top = expression_rect.bottom;
+        g_active_scroll_track.bottom = expression_rect.bottom + scale_px(7);
+        draw_scrollable_expression(dc, expression, expression_rect, g_active_scroll_track,
+                                   g_font_expression, COLOR_MUTED, ID_ACTIVE_SCROLLBAR,
+                                   &g_active_scroll_x, &g_active_scroll_max,
+                                   &g_active_scroll_thumb);
+        display_rect = result_display_rect(width, height);
+        ascii_to_pretty(g_calc.display, display, _countof(display));
+        draw_selectable_display(dc, display, display_rect);
+
+        draw_memory_row(dc, width, height);
+        for (index = 0; index < 24; ++index) draw_grid_button(dc, index, width, height);
+        if (g_memory_popup) draw_memory_popup(dc, width, height);
+        if (g_history_open) draw_history_panel(dc, width, height);
     }
-    g_active_scroll_track.left = expression_rect.left;
-    g_active_scroll_track.right = expression_rect.right;
-    g_active_scroll_track.top = expression_rect.bottom;
-    g_active_scroll_track.bottom = expression_rect.bottom + scale_px(7);
-    draw_scrollable_expression(dc, expression, expression_rect, g_active_scroll_track,
-                               g_font_expression, COLOR_MUTED, ID_ACTIVE_SCROLLBAR,
-                               &g_active_scroll_x, &g_active_scroll_max,
-                               &g_active_scroll_thumb);
-    display_rect = result_display_rect(width, height);
-    ascii_to_pretty(g_calc.display, display, _countof(display));
-    draw_selectable_display(dc, display, display_rect);
-
-    draw_memory_row(dc, width, height);
-    for (index = 0; index < 24; ++index) draw_grid_button(dc, index, width, height);
-    if (g_memory_popup) draw_memory_popup(dc, width, height);
-    if (g_history_open) draw_history_panel(dc, width, height);
     if (g_nav_open) draw_nav_panel(dc, width, height);
 
     BitBlt(target_dc, 0, 0, width, height, dc, 0, 0, SRCCOPY);
@@ -1143,7 +1206,7 @@ static int point_in_rect(RECT rect, int x, int y) {
 }
 
 static int result_selection_available(void) {
-    return !g_history_open && !g_nav_open;
+    return !g_history_open && !g_nav_open && !g_changelog_open;
 }
 
 static int result_character_from_x(HWND window, int mouse_x) {
@@ -1277,16 +1340,20 @@ static int hit_test(HWND window, int x, int y) {
     width = client.right;
     height = client.bottom;
     if (point_in_rect(header_menu_rect(), x, y)) return ID_MENU;
-    if (point_in_rect(header_history_rect(width), x, y)) return ID_HISTORY;
+    if (!g_changelog_open && point_in_rect(header_history_rect(width), x, y)) return ID_HISTORY;
     if (g_nav_open) {
         RECT standard = {scale_px(6), scale_px(110),
-                         (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(162)};
-        RECT updates = {scale_px(6), scale_px(174),
-                        (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(226)};
+                         (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(158)};
+        RECT changelog = {scale_px(6), scale_px(166),
+                          (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(214)};
+        RECT updates = {scale_px(6), scale_px(222),
+                        (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(270)};
         if (point_in_rect(standard, x, y)) return ID_NAV_STANDARD;
+        if (point_in_rect(changelog, x, y)) return ID_NAV_CHANGELOG;
         if (point_in_rect(updates, x, y)) return ID_CHECK_UPDATES;
         return -1;
     }
+    if (g_changelog_open) return -1;
     if (g_history_open) {
         int visible = history_visible_count(height);
         if (point_in_rect(history_wipe_rect(width, height), x, y)) return ID_CLEAR_HISTORY;
@@ -1414,6 +1481,7 @@ static void activate_id(HWND window, int id) {
             case 5: g_memory_popup = !g_memory_popup; break;
         }
     } else if (id == ID_HISTORY) {
+        if (g_changelog_open) return;
         g_history_open = !g_history_open;
         g_nav_open = 0;
         g_memory_popup = 0;
@@ -1422,6 +1490,15 @@ static void activate_id(HWND window, int id) {
         g_history_open = 0;
         g_memory_popup = 0;
     } else if (id == ID_NAV_STANDARD) {
+        g_changelog_open = 0;
+        g_history_open = 0;
+        g_memory_popup = 0;
+        g_nav_open = 0;
+    } else if (id == ID_NAV_CHANGELOG) {
+        clear_result_selection();
+        g_changelog_open = 1;
+        g_history_open = 0;
+        g_memory_popup = 0;
         g_nav_open = 0;
     } else if (id == ID_CHECK_UPDATES) {
         g_nav_open = 0;
@@ -1485,8 +1562,13 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             SetWindowPos(window, NULL, suggested->left, suggested->top,
                          suggested->right - suggested->left, suggested->bottom - suggested->top,
                          SWP_NOZORDER | SWP_NOACTIVATE);
+            updater_owner_resized(window);
             return 0;
         }
+        case WM_SIZE:
+            updater_owner_resized(window);
+            InvalidateRect(window, NULL, FALSE);
+            return 0;
         case WM_GETMINMAXINFO: {
             MINMAXINFO *info = (MINMAXINFO *)lparam;
             info->ptMinTrackSize.x = scale_px(322);
@@ -1636,6 +1718,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         }
         case WM_KEYDOWN: {
             int control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+            if (g_changelog_open) return 0;
             if (control) {
                 switch (wparam) {
                     case 'C': copy_display_to_clipboard(window); return 0;
@@ -1676,6 +1759,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             return 0;
         }
         case WM_CHAR:
+            if (g_changelog_open) return 0;
             if (wparam != VK_RETURN && wparam != VK_BACK && wparam != VK_ESCAPE)
                 keyboard_character(window, (wchar_t)wparam);
             return 0;

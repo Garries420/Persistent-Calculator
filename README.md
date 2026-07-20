@@ -5,6 +5,11 @@
 <h1 align="center">Persistent Calculator</h1>
 
 <p align="center">
+  <a href="https://github.com/Garries420/Persistent-Calculator/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/release-v1.0.1-8250df" alt="release v1.0.1"></a>
+  <img src="https://img.shields.io/badge/platform-Windows-2563eb" alt="platform Windows">
+</p>
+
+<p align="center">
   A compact, dark Windows Standard calculator with full calculation chains, permanent local history, and secure automatic updates.
 </p>
 
@@ -37,8 +42,9 @@
 - Memory controls: MC, MR, M+, M−, MS, and the saved-memory popup.
 - Remembers its last screen position, window size, and maximized state.
 - Keyboard input, Enter/equals, Backspace, Delete/CE, Escape/C, and clipboard shortcuts.
-- A five-second update-status popup checks the public GitHub release on every startup.
+- A five-second update-status notice stays attached to the calculator and wraps every word cleanly.
 - Manual **Check for updates** control and current version display in the hamburger menu.
+- Built-in **Changelog** screen available from the hamburger menu.
 - Secure automatic updates verify GitHub's SHA-256 release-asset digest before launching anything.
 - Portable single-executable release: no installer and no bundled personal history.
 
@@ -127,7 +133,7 @@ Every push to the public `main` branch is rebuilt by GitHub Actions. A release i
 
 - Public repository: stable source, public feedback, and downloadable releases.
 - Development/testing occurs privately before a finished version is copied to the public `main` branch.
-- Stable releases use semantic versions such as `1.0.0`, `1.1.0`, and `2.0.0`.
+- Stable releases use semantic versions such as `1.0.1`, `1.1.0`, and `2.0.0`.
 
 ## License
 
