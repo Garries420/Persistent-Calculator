@@ -351,12 +351,10 @@ static void layout_update_popup(HWND popup) {
     GetClientRect(owner, &owner_client);
     if (g_update_ui_mode != UPDATE_UI_NOTICE) {
         SetWindowRgn(popup, NULL, TRUE);
-        SetLayeredWindowAttributes(popup, 0, 225, LWA_ALPHA);
         SetWindowPos(popup, HWND_TOP, 0, 0, owner_client.right,
                      owner_client.bottom, SWP_NOACTIVATE | SWP_NOOWNERZORDER);
         return;
     }
-    SetLayeredWindowAttributes(popup, 0, 255, LWA_ALPHA);
     margin = MulDiv(8, (int)dpi, 96);
     padding = MulDiv(12, (int)dpi, 96);
     vertical_padding = MulDiv(9, (int)dpi, 96);
@@ -687,8 +685,9 @@ static int ensure_popup(HWND owner) {
     window_class.hbrBackground = NULL;
     window_class.lpszClassName = UPDATE_POPUP_CLASS;
     RegisterClassExW(&window_class);
-    g_update_popup = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_LAYERED,
-                                     UPDATE_POPUP_CLASS, L"", WS_CHILD,
+    g_update_popup = CreateWindowExW(WS_EX_NOACTIVATE,
+                                     UPDATE_POPUP_CLASS, L"",
+                                     WS_CHILD | WS_CLIPSIBLINGS,
                                      0, 0, 300, 58, owner, NULL, instance, NULL);
     return g_update_popup != NULL;
 }
@@ -701,9 +700,14 @@ static void show_update_notice(HWND owner, const wchar_t *status) {
     wcsncpy(g_update_status, status, _countof(g_update_status) - 1);
     g_update_status[_countof(g_update_status) - 1] = L'\0';
     layout_update_popup(g_update_popup);
+    KillTimer(g_update_popup, UPDATE_POPUP_TIMER);
     ShowWindow(g_update_popup, SW_SHOWNOACTIVATE);
+    SetWindowPos(g_update_popup, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                 SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
     SetTimer(g_update_popup, UPDATE_POPUP_TIMER, UPDATE_POPUP_MILLISECONDS, NULL);
-    InvalidateRect(g_update_popup, NULL, FALSE);
+    RedrawWindow(g_update_popup, NULL, NULL,
+                 RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
 }
 
 static int post_update_payload(const UpdateUiPayload *source) {

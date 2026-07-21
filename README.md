@@ -28,7 +28,6 @@
 - Familiar Windows Calculator-inspired dark Standard layout.
 - Google-style percentage calculations: `20 % 100 = 20` is preserved as `20% × 100 = 20`.
 - Traditional percentage calculations remain supported, such as `50 + 10% = 55`.
-- Large totals use readable three-digit spacing, such as `5 000` and `5 000 000`.
 - Results can be selected with a custom gray highlight, right-clicked, and copied.
 - Permanent, human-readable calculation history stored locally as a text file.
 - Clicking a history entry restores both its result and preserved calculation chain.
@@ -37,8 +36,6 @@
 - Remembers its last screen position, window size, and maximized state.
 - Manual **Check for updates** control and current version display in the hamburger menu.
 - Built-in scrollable **Changelog** screen retains up to the five latest releases.
-- Available updates ask first and show private-safe progress when accepted.
-- Secure updates verify GitHub's SHA-256 release-asset digest before launching anything.
 - Portable single-executable release: no installer and no bundled personal history.
 
 ## Standard mode only
