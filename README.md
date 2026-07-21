@@ -19,9 +19,11 @@
 
 ## Screenshots
 
-| Calculator | Persistent history |
+| Update status | Standard calculator |
 |---|---|
-| ![Persistent Calculator showing a long calculation](docs/screenshots/calculator.png) | ![Persistent Calculator history panel](docs/screenshots/history.png) |
+| ![Persistent Calculator showing its attached update-status notice](docs/screenshots/update-status.png) | ![Persistent Calculator showing a grouped large result](docs/screenshots/calculator.png) |
+| **Persistent history** | **Changelog** |
+| ![Persistent Calculator history panel](docs/screenshots/history.png) | ![Persistent Calculator changelog panel](docs/screenshots/changelog.png) |
 
 ## Features
 
