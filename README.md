@@ -62,6 +62,8 @@ The project does not ship with anyone else's calculation history. Each Windows u
 
 > Windows SmartScreen may warn about a newly downloaded build because the project does not currently have a paid code-signing certificate. Release SHA-256 values are published beside every EXE, and the built-in updater verifies GitHub's asset digest before installing an update.
 
+The project is preparing an application for free open-source signing. See the [Code signing policy](CODE_SIGNING.md) for its signing scope, maintainers, approval rules, and privacy disclosure.
+
 ## Where the history text file is created
 
 The calculator creates:
@@ -95,6 +97,12 @@ When a newer stable release exists, the calculator:
 7. Replaces and restarts the calculator only after verification succeeds.
 
 See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) for more detail.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+The dedicated [Code signing policy](CODE_SIGNING.md) defines the permitted public build source, project roles, manual release approval, signature verification, and privacy requirements. Existing releases remain unsigned unless their executable carries a verifiable Authenticode signature.
 
 ## Useful keyboard controls
 
