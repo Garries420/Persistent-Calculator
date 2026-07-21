@@ -5,12 +5,12 @@
 <h1 align="center">Persistent Calculator</h1>
 
 <p align="center">
-  <a href="https://github.com/Garries420/Persistent-Calculator/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/release-v1.0.1-8250df" alt="release v1.0.1"></a>
+  <a href="https://github.com/Garries420/Persistent-Calculator/releases/tag/v1.1.0"><img src="https://img.shields.io/badge/release-v1.1.0-8250df" alt="release v1.1.0"></a>
   <img src="https://img.shields.io/badge/platform-Windows-2563eb" alt="platform Windows">
 </p>
 
 <p align="center">
-  A compact, dark Windows Standard calculator with full calculation chains, permanent local history, and secure automatic updates.
+  A compact, dark Windows Standard calculator with permanent local history and secure, user-approved updates.
 </p>
 
 <p align="center">
@@ -26,26 +26,19 @@
 ## Features
 
 - Familiar Windows Calculator-inspired dark Standard layout.
-- Addition, subtraction, multiplication, division, decimals, sign changes, reciprocal, square, square root, and percentages.
 - Google-style percentage calculations: `20 % 100 = 20` is preserved as `20% × 100 = 20`.
 - Traditional percentage calculations remain supported, such as `50 + 10% = 55`.
-- Complete calculation chains remain visible instead of being replaced by intermediate totals.
-- Long active expressions and history expressions have draggable horizontal scrollbars.
-- Result text automatically shrinks to fit instead of being replaced with `...`.
+- Large totals use readable three-digit spacing, such as `5 000` and `5 000 000`.
 - Results can be selected with a custom gray highlight, right-clicked, and copied.
 - Permanent, human-readable calculation history stored locally as a text file.
 - Clicking a history entry restores both its result and preserved calculation chain.
 - Continuing a restored calculation updates the same working history session.
-- Operator-completed calculations can be saved without requiring Enter; for example, `11 + 11 + 11 +` records `33`.
-- Mouse-wheel scrolling remains vertical inside the History panel.
 - Red **Wipe history** button with a bin icon.
-- Memory controls: MC, MR, M+, M−, MS, and the saved-memory popup.
 - Remembers its last screen position, window size, and maximized state.
-- Keyboard input, Enter/equals, Backspace, Delete/CE, Escape/C, and clipboard shortcuts.
-- A five-second update-status notice stays attached to the calculator and wraps every word cleanly.
 - Manual **Check for updates** control and current version display in the hamburger menu.
-- Built-in **Changelog** screen available from the hamburger menu.
-- Secure automatic updates verify GitHub's SHA-256 release-asset digest before launching anything.
+- Built-in scrollable **Changelog** screen retains up to the five latest releases.
+- Available updates ask first and show private-safe progress when accepted.
+- Secure updates verify GitHub's SHA-256 release-asset digest before launching anything.
 - Portable single-executable release: no installer and no bundled personal history.
 
 ## Standard mode only
@@ -94,12 +87,13 @@ On startup, the calculator performs one HTTPS `GET` request to the public `Garri
 
 When a newer stable release exists, the calculator:
 
-1. Downloads only the exact `PersistentCalculator.exe` release asset.
-2. Requires the download URL to belong to this repository's GitHub Releases path.
-3. Calculates the downloaded file's SHA-256 hash.
-4. Compares it with GitHub's release-asset digest.
-5. Cancels the update if any verification fails.
-6. Replaces and restarts the calculator only after verification succeeds.
+1. Shows the current and available versions and asks whether to update.
+2. Downloads nothing unless **Yes, update** is selected. Choosing **No, not now** keeps the calculator open and asks again on the next startup or manual check.
+3. Downloads only the exact `PersistentCalculator.exe` asset from this repository's GitHub Releases path.
+4. Shows generic download, verification, and installation progress without exposing user paths.
+5. Calculates the downloaded file's SHA-256 hash and compares it with GitHub's release-asset digest.
+6. Cancels the update if any verification fails.
+7. Replaces and restarts the calculator only after verification succeeds.
 
 See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) for more detail.
 
@@ -128,12 +122,6 @@ scripts\build-release.cmd
 The script runs the calculation-engine tests, updater-parser security tests, compiles the resources/icon, and produces `dist\PersistentCalculator.exe` with the static Microsoft C runtime.
 
 Every push to the public `main` branch is rebuilt by GitHub Actions. A release is created only when the version in `VERSION` does not already have a matching release tag.
-
-## Development and releases
-
-- Public repository: stable source, public feedback, and downloadable releases.
-- Development/testing occurs privately before a finished version is copied to the public `main` branch.
-- Stable releases use semantic versions such as `1.0.1`, `1.1.0`, and `2.0.0`.
 
 ## License
 

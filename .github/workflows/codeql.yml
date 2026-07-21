@@ -39,7 +39,7 @@ jobs:
             "if errorlevel 1 exit /b 1"
             "where clang-cl >nul 2>nul"
             "if errorlevel 1 exit /b 1"
-            "clang-cl /nologo /O2 /utf-8 /TC /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /c src\main.c src\calc_engine.c src\updater.c src\update_parser.c tests\test_engine.c tests\test_updater.c"
+            "clang-cl /nologo /O2 /utf-8 /TC /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /c src\main.c src\calc_engine.c src\display_format.c src\updater.c src\update_parser.c tests\test_engine.c tests\test_updater.c"
             "if errorlevel 1 exit /b 1"
           ) | Set-Content -LiteralPath $buildWrapper -Encoding ascii
           & $codeql database trace-command --working-dir="$PWD" -- $env:CODEQL_EXTRACTOR_CPP_WIP_DATABASE $env:ComSpec /d /c $buildWrapper

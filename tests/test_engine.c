@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "../src/calc_engine.h"
+#include "../src/display_format.h"
 
 static int close_to(double actual, double expected) {
     return fabs(actual - expected) < 1e-10;
@@ -21,6 +22,24 @@ int main(void) {
     CalcState state;
     char expression[2048];
     char result[96];
+    wchar_t formatted[160];
+
+    display_format_ascii_number("500", formatted, 160);
+    assert(wcscmp(formatted, L"500") == 0);
+    display_format_ascii_number("5000", formatted, 160);
+    assert(wcscmp(formatted, L"5 000") == 0);
+    display_format_ascii_number("50000", formatted, 160);
+    assert(wcscmp(formatted, L"50 000") == 0);
+    display_format_ascii_number("500000", formatted, 160);
+    assert(wcscmp(formatted, L"500 000") == 0);
+    display_format_ascii_number("5000000", formatted, 160);
+    assert(wcscmp(formatted, L"5 000 000") == 0);
+    display_format_ascii_number("-1234567.89", formatted, 160);
+    assert(wcscmp(formatted, L"−1 234 567,89") == 0);
+    display_format_ascii_number("2.16163548343314e+24", formatted, 160);
+    assert(wcscmp(formatted, L"2,16163548343314e+24") == 0);
+    display_format_ascii_number("Cannot divide by zero", formatted, 160);
+    assert(wcscmp(formatted, L"Cannot divide by zero") == 0);
 
     calc_init(&state);
     enter_number(&state, "12.5");

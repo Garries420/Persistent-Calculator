@@ -19,7 +19,7 @@ The only built-in network activity is the update checker. It makes an HTTPS `GET
 https://api.github.com/repos/Garries420/Persistent-Calculator/releases/latest
 ```
 
-If a newer version exists, it downloads the exact release EXE from this repository's GitHub Releases path. The calculator does not perform telemetry, analytics, advertising, account login, history synchronization, or background uploads.
+If a newer version exists, the calculator asks before downloading anything. After the user accepts, it downloads the exact release EXE from this repository's GitHub Releases path and displays only generic progress stages and percentages. The calculator does not perform telemetry, analytics, advertising, account login, history synchronization, or background uploads.
 
 The update checker does not read or send:
 

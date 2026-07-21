@@ -1,6 +1,6 @@
-# Persistent Calculator 1.0.1
+# Persistent Calculator 1.1.0
 
-This update keeps every update-status message attached to the calculator window, wraps the complete status text without truncation, and adds a built-in changelog screen to the hamburger navigation menu.
+This update adds spaced digit grouping for large totals, a five-release scrollable in-app changelog, two-second routine update notices, an update-now-or-later choice, and private-safe update progress with download, verification, and installation stages.
 
 Download `PersistentCalculator.exe` and run it directly—no installer is required.
 

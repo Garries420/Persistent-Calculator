@@ -18,7 +18,7 @@ Include:
 
 ## Update security
 
-The updater accepts only stable releases returned by GitHub's `releases/latest` API for `Garries420/Persistent-Calculator`. It permits only the exact `PersistentCalculator.exe` asset under this repository's GitHub Releases URL and verifies GitHub's SHA-256 asset digest before launching the file.
+The updater accepts only stable releases returned by GitHub's `releases/latest` API for `Garries420/Persistent-Calculator`. It asks for consent before downloading, permits only the exact `PersistentCalculator.exe` asset under this repository's GitHub Releases URL, and verifies GitHub's SHA-256 asset digest before launching the file.
 
 The updater fails closed: a missing digest, malformed response, wrong domain/repository path, download error, or hash mismatch cancels installation.
 

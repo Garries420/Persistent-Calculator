@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-07-21
+
+- Large totals now use readable three-digit spacing, such as `5 000` and `5 000 000`.
+- The in-app changelog retains up to the five latest releases with version tabs and vertical scrolling.
+- Routine update-status notices now disappear after two seconds.
+- Available updates ask for permission before downloading and can be declined until later.
+- Accepted updates display private-safe download, verification, and installation progress.
+
 ## 1.0.1 — 2026-07-20
 
 - Update notices are now attached to the calculator window and move with it.

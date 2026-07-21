@@ -22,6 +22,7 @@
 #include <wchar.h>
 
 #include "calc_engine.h"
+#include "display_format.h"
 #include "updater.h"
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
@@ -46,7 +47,9 @@
 #define ID_ACTIVE_SCROLLBAR 800
 #define ID_HISTORY_SCROLLBAR_BASE 900
 #define ID_COPY_RESULT 1000
+#define ID_CHANGELOG_TAB_BASE 1100
 #define MAX_VISIBLE_HISTORY 32
+#define CHANGELOG_MAX_RELEASES 5
 
 typedef struct HistoryEntry {
     wchar_t expression[2048];
@@ -68,6 +71,13 @@ typedef struct SavedWindowPlacement {
     DWORD maximized;
 } SavedWindowPlacement;
 
+typedef struct ChangelogRelease {
+    const wchar_t *version;
+    const wchar_t *date;
+    const wchar_t *const *items;
+    int item_count;
+} ChangelogRelease;
+
 static const GridButton g_buttons[24] = {
     {L"%", 0}, {L"CE", 0}, {L"C", 0}, {L"⌫", 0},
     {L"1/x", 0}, {L"x²", 0}, {L"²√x", 0}, {L"÷", 0},
@@ -79,6 +89,33 @@ static const GridButton g_buttons[24] = {
 
 static const wchar_t *g_memory_labels[6] = {L"MC", L"MR", L"M+", L"M−", L"MS", L"M⌄"};
 
+static const wchar_t *const g_changelog_110[] = {
+    L"Large totals now use readable three-digit spacing, such as 5 000 and 5 000 000.",
+    L"The changelog keeps up to the five latest releases, with version tabs and vertical scrolling.",
+    L"Routine update-status notices now disappear after two seconds.",
+    L"Available updates ask for permission before downloading, so the calculator can be used immediately.",
+    L"Accepted updates now show private-safe download, verification, and installation progress."
+};
+
+static const wchar_t *const g_changelog_101[] = {
+    L"Update notices stay attached to the calculator window when it moves.",
+    L"Update-status messages wrap cleanly so their complete text remains readable.",
+    L"Added an in-app changelog screen to the hamburger navigation menu."
+};
+
+static const wchar_t *const g_changelog_100[] = {
+    L"Initial public release with permanent calculation history.",
+    L"Preserved expression chains can be recalled and continued.",
+    L"Selectable results, remembered window placement, percentage calculations, and verified automatic updates."
+};
+
+/* Keep this list newest-first and retain at most the latest five releases. */
+static const ChangelogRelease g_changelog_releases[] = {
+    {L"1.1.0", L"21 July 2026", g_changelog_110, (int)_countof(g_changelog_110)},
+    {L"1.0.1", L"20 July 2026", g_changelog_101, (int)_countof(g_changelog_101)},
+    {L"1.0.0", L"20 July 2026", g_changelog_100, (int)_countof(g_changelog_100)}
+};
+
 static CalcState g_calc;
 static HistoryEntry g_history[HISTORY_CAPACITY];
 static int g_history_count;
@@ -87,6 +124,9 @@ static int g_history_open;
 static int g_calculation_history_index = -1;
 static int g_nav_open;
 static int g_changelog_open;
+static int g_changelog_selected;
+static int g_changelog_scroll;
+static int g_changelog_scroll_max;
 static int g_memory_popup;
 static int g_hot_id = -1;
 static int g_pressed_id = -1;
@@ -456,7 +496,7 @@ static int selected_result_text(wchar_t *destination, size_t capacity) {
     int start, end;
     size_t count;
     if (!destination || capacity == 0) return 0;
-    ascii_to_pretty(g_calc.display, current, _countof(current));
+    display_format_ascii_number(g_calc.display, current, _countof(current));
     sync_result_selection(current);
     start = g_result_selection_anchor;
     end = g_result_selection_end;
@@ -485,12 +525,33 @@ static void trim_wide(wchar_t *text_value) {
     }
 }
 
+static int is_pretty_number(const wchar_t *text_value) {
+    int has_digit = 0;
+    while (*text_value) {
+        wchar_t character = *text_value++;
+        if (character >= L'0' && character <= L'9') has_digit = 1;
+        else if (character != L' ' && character != L',' && character != L'.' &&
+                 character != L'−' && character != L'-' && character != L'+' &&
+                 character != L'e' && character != L'E') return 0;
+    }
+    return has_digit;
+}
+
 static void add_history(const wchar_t *expression, const wchar_t *result) {
     HistoryEntry *entry;
+    char result_ascii[160];
+    wchar_t formatted_result[160];
     if (!expression || !*expression || !result || !*result) return;
+    if (is_pretty_number(result)) {
+        pretty_number_to_ascii(result, result_ascii, sizeof(result_ascii));
+        display_format_ascii_number(result_ascii, formatted_result, _countof(formatted_result));
+    } else {
+        wcsncpy(formatted_result, result, _countof(formatted_result) - 1);
+        formatted_result[_countof(formatted_result) - 1] = L'\0';
+    }
     if (g_history_count > 0 &&
         wcscmp(g_history[g_history_count - 1].expression, expression) == 0 &&
-        wcscmp(g_history[g_history_count - 1].result, result) == 0) return;
+        wcscmp(g_history[g_history_count - 1].result, formatted_result) == 0) return;
     if (g_history_count == HISTORY_CAPACITY) {
         memmove(&g_history[0], &g_history[1], sizeof(g_history[0]) * (HISTORY_CAPACITY - 1));
         --g_history_count;
@@ -498,7 +559,7 @@ static void add_history(const wchar_t *expression, const wchar_t *result) {
     entry = &g_history[g_history_count++];
     wcsncpy(entry->expression, expression, _countof(entry->expression) - 1);
     entry->expression[_countof(entry->expression) - 1] = L'\0';
-    wcsncpy(entry->result, result, _countof(entry->result) - 1);
+    wcsncpy(entry->result, formatted_result, _countof(entry->result) - 1);
     entry->result[_countof(entry->result) - 1] = L'\0';
     entry->scroll_x = 0;
     trim_wide(entry->expression);
@@ -706,7 +767,7 @@ static void record_ascii_history(const char *expression, const char *result, int
     wchar_t expression_wide[2048];
     wchar_t result_wide[160];
     ascii_to_pretty(expression, expression_wide, _countof(expression_wide));
-    ascii_to_pretty(result, result_wide, _countof(result_wide));
+    display_format_ascii_number(result, result_wide, _countof(result_wide));
     if (continue_session && g_calculation_history_index >= 0 &&
         g_calculation_history_index < g_history_count) {
         HistoryEntry *entry = &g_history[g_calculation_history_index];
@@ -748,7 +809,7 @@ static void copy_display_to_clipboard(HWND window) {
     HGLOBAL memory;
     wchar_t *target;
     if (!selected_result_text(pretty, _countof(pretty)))
-        ascii_to_pretty(g_calc.display, pretty, _countof(pretty));
+        display_format_ascii_number(g_calc.display, pretty, _countof(pretty));
     if (!OpenClipboard(window)) return;
     EmptyClipboard();
     memory = GlobalAlloc(GMEM_MOVEABLE, (wcslen(pretty) + 1) * sizeof(wchar_t));
@@ -911,7 +972,7 @@ static void draw_memory_popup(HDC dc, int width, int height) {
     if (g_calc.has_memory) {
         char raw[96];
         snprintf(raw, sizeof(raw), "%.15g", g_calc.memory);
-        ascii_to_pretty(raw, value, _countof(value));
+        display_format_ascii_number(raw, value, _countof(value));
     } else {
         wcscpy(value, L"Nothing saved in memory");
     }
@@ -1087,47 +1148,119 @@ static void draw_nav_panel(HDC dc, int width, int height) {
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 }
 
-static void draw_changelog_bullet(HDC dc, int width, int top, const wchar_t *text_value) {
-    RECT bullet = {scale_px(20), top, scale_px(36), top + scale_px(60)};
-    RECT body = {scale_px(40), top, width - scale_px(18), top + scale_px(60)};
-    draw_text_color(dc, L"•", bullet, g_font_title, COLOR_EQUAL,
-                    DT_LEFT | DT_TOP | DT_SINGLELINE);
-    draw_text_color(dc, text_value, body, g_font_normal, COLOR_TEXT,
-                    DT_LEFT | DT_TOP | DT_WORDBREAK);
+static int changelog_release_count(void) {
+    int count = (int)_countof(g_changelog_releases);
+    return count < CHANGELOG_MAX_RELEASES ? count : CHANGELOG_MAX_RELEASES;
+}
+
+static RECT changelog_tab_rect(int index, int width) {
+    int count = changelog_release_count();
+    int margin = scale_px(8);
+    int gap = scale_px(4);
+    int available = width - margin * 2 - gap * (count - 1);
+    RECT rect = {
+        margin + (available * index) / count + gap * index,
+        scale_px(62),
+        margin + (available * (index + 1)) / count + gap * index,
+        scale_px(98)
+    };
+    return rect;
+}
+
+static int changelog_text_height(HDC dc, const wchar_t *text_value, int width) {
+    RECT measure = {0, 0, width, 0};
+    HGDIOBJ old_font = SelectObject(dc, g_font_normal);
+    DrawTextW(dc, text_value, -1, &measure,
+              DT_LEFT | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+    SelectObject(dc, old_font);
+    return measure.bottom > scale_px(22) ? measure.bottom : scale_px(22);
 }
 
 static void draw_changelog_panel(HDC dc, int width, int height) {
+    int count = changelog_release_count();
+    int content_top = scale_px(116);
+    int content_bottom = height - scale_px(26);
+    int viewport_height = content_bottom - content_top;
+    int body_width = width - scale_px(64);
+    int content_height = scale_px(58);
+    int index;
+    int y;
+    int saved_dc;
+    const ChangelogRelease *release;
     RECT panel = {0, scale_px(50), width, height};
-    RECT heading = {scale_px(18), scale_px(68), width - scale_px(18), scale_px(101)};
-    RECT version_badge = {scale_px(18), scale_px(105), scale_px(120), scale_px(135)};
-    RECT release_date = {scale_px(132), scale_px(105), width - scale_px(18), scale_px(135)};
-    RECT divider = {scale_px(18), scale_px(146), width - scale_px(18), scale_px(147)};
-    RECT previous_heading = {scale_px(20), scale_px(374), width - scale_px(18), scale_px(404)};
-    RECT previous_body = {scale_px(20), scale_px(407), width - scale_px(18), scale_px(463)};
-    RECT hint = {scale_px(18), height - scale_px(48), width - scale_px(18), height - scale_px(16)};
+    RECT divider = {scale_px(10), scale_px(105), width - scale_px(10), scale_px(106)};
+    RECT hint = {scale_px(10), height - scale_px(24), width - scale_px(10), height};
+    if (g_changelog_selected < 0 || g_changelog_selected >= count)
+        g_changelog_selected = 0;
+    release = &g_changelog_releases[g_changelog_selected];
+
+    for (index = 0; index < release->item_count; ++index)
+        content_height += changelog_text_height(dc, release->items[index], body_width) + scale_px(18);
+    content_height += scale_px(14);
+    g_changelog_scroll_max = content_height > viewport_height
+                                 ? content_height - viewport_height : 0;
+    if (g_changelog_scroll < 0) g_changelog_scroll = 0;
+    if (g_changelog_scroll > g_changelog_scroll_max)
+        g_changelog_scroll = g_changelog_scroll_max;
+
     fill_rect_color(dc, &panel, COLOR_PANEL);
-    draw_text_color(dc, L"What's new", heading, g_font_title, COLOR_TEXT,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    rounded_rect(dc, &version_badge, COLOR_EQUAL, scale_px(14));
-    draw_text_color(dc, L"Version 1.0.1", version_badge, g_font_small, RGB(25, 45, 55),
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    draw_text_color(dc, L"20 July 2026", release_date, g_font_small, COLOR_MUTED,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    for (index = 0; index < count; ++index) {
+        RECT tab = changelog_tab_rect(index, width);
+        COLORREF fill = index == g_changelog_selected ? COLOR_PRESSED : COLOR_BUTTON;
+        if (g_hot_id == ID_CHANGELOG_TAB_BASE + index) fill = COLOR_HOVER;
+        rounded_rect(dc, &tab, fill, scale_px(5));
+        draw_text_color(dc, g_changelog_releases[index].version, tab, g_font_small,
+                        COLOR_TEXT, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
     fill_rect_color(dc, &divider, COLOR_HOVER);
-    draw_changelog_bullet(dc, width, scale_px(162),
-                          L"Update notices now stay attached to the calculator window when it moves.");
-    draw_changelog_bullet(dc, width, scale_px(230),
-                          L"Update messages wrap cleanly so every word remains visible.");
-    draw_changelog_bullet(dc, width, scale_px(298),
-                          L"Added this built-in changelog screen to the navigation menu.");
-    draw_text_color(dc, L"Version 1.0.0", previous_heading, g_font_normal, COLOR_TEXT,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    draw_text_color(dc,
-                    L"Initial public release with permanent history, full expression chains, and verified automatic updates.",
-                    previous_body, g_font_small, COLOR_MUTED,
-                    DT_LEFT | DT_TOP | DT_WORDBREAK);
-    draw_text_color(dc, L"Menu  →  Standard returns to the calculator.", hint,
-                    g_font_small, COLOR_MUTED,
+
+    saved_dc = SaveDC(dc);
+    IntersectClipRect(dc, 0, content_top, width, content_bottom);
+    y = content_top - g_changelog_scroll;
+    {
+        RECT version_rect = {scale_px(18), y, width - scale_px(18), y + scale_px(30)};
+        RECT date_rect = {scale_px(18), y + scale_px(30), width - scale_px(18), y + scale_px(52)};
+        wchar_t heading[64];
+        _snwprintf(heading, _countof(heading), L"Version %ls", release->version);
+        heading[_countof(heading) - 1] = L'\0';
+        draw_text_color(dc, heading, version_rect, g_font_title, COLOR_TEXT,
+                        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        draw_text_color(dc, release->date, date_rect, g_font_small, COLOR_MUTED,
+                        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+    y += scale_px(62);
+    for (index = 0; index < release->item_count; ++index) {
+        int text_height = changelog_text_height(dc, release->items[index], body_width);
+        RECT bullet = {scale_px(20), y, scale_px(36), y + text_height};
+        RECT body = {scale_px(40), y, width - scale_px(24), y + text_height};
+        draw_text_color(dc, L"•", bullet, g_font_title, COLOR_EQUAL,
+                        DT_LEFT | DT_TOP | DT_SINGLELINE);
+        draw_text_color(dc, release->items[index], body, g_font_normal, COLOR_TEXT,
+                        DT_LEFT | DT_TOP | DT_WORDBREAK);
+        y += text_height + scale_px(18);
+    }
+    RestoreDC(dc, saved_dc);
+
+    if (g_changelog_scroll_max > 0) {
+        int track_height = viewport_height;
+        int thumb_height = (viewport_height * viewport_height) / content_height;
+        int thumb_top;
+        RECT track = {width - scale_px(7), content_top,
+                      width - scale_px(3), content_bottom};
+        RECT thumb;
+        if (thumb_height < scale_px(30)) thumb_height = scale_px(30);
+        thumb_top = content_top +
+                    (g_changelog_scroll * (track_height - thumb_height)) /
+                    g_changelog_scroll_max;
+        thumb.left = track.left;
+        thumb.right = track.right;
+        thumb.top = thumb_top;
+        thumb.bottom = thumb_top + thumb_height;
+        rounded_rect(dc, &track, RGB(55, 55, 55), scale_px(2));
+        rounded_rect(dc, &thumb, RGB(145, 149, 150), scale_px(2));
+    }
+    draw_text_color(dc, g_changelog_scroll_max > 0 ? L"Scroll for more" : L"Choose a version above",
+                    hint, g_font_small, COLOR_MUTED,
                     DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
@@ -1184,7 +1317,7 @@ static void paint_window(HWND window, HDC target_dc) {
                                    &g_active_scroll_x, &g_active_scroll_max,
                                    &g_active_scroll_thumb);
         display_rect = result_display_rect(width, height);
-        ascii_to_pretty(g_calc.display, display, _countof(display));
+        display_format_ascii_number(g_calc.display, display, _countof(display));
         draw_selectable_display(dc, display, display_rect);
 
         draw_memory_row(dc, width, height);
@@ -1223,7 +1356,7 @@ static int result_character_from_x(HWND window, int mouse_x) {
     int index, length;
     GetClientRect(window, &client);
     rect = result_display_rect(client.right, client.bottom);
-    ascii_to_pretty(g_calc.display, text_value, _countof(text_value));
+    display_format_ascii_number(g_calc.display, text_value, _countof(text_value));
     length = (int)wcslen(text_value);
     dc = GetDC(window);
     if (!dc) return 0;
@@ -1253,7 +1386,7 @@ static int result_character_from_x(HWND window, int mouse_x) {
 
 static void begin_result_selection(HWND window, int mouse_x) {
     wchar_t text_value[160];
-    ascii_to_pretty(g_calc.display, text_value, _countof(text_value));
+    display_format_ascii_number(g_calc.display, text_value, _countof(text_value));
     wcsncpy(g_result_selection_text, text_value, _countof(g_result_selection_text) - 1);
     g_result_selection_text[_countof(g_result_selection_text) - 1] = L'\0';
     g_result_selection_anchor = result_character_from_x(window, mouse_x);
@@ -1353,7 +1486,13 @@ static int hit_test(HWND window, int x, int y) {
         if (point_in_rect(updates, x, y)) return ID_CHECK_UPDATES;
         return -1;
     }
-    if (g_changelog_open) return -1;
+    if (g_changelog_open) {
+        int count = changelog_release_count();
+        for (index = 0; index < count; ++index)
+            if (point_in_rect(changelog_tab_rect(index, width), x, y))
+                return ID_CHANGELOG_TAB_BASE + index;
+        return -1;
+    }
     if (g_history_open) {
         int visible = history_visible_count(height);
         if (point_in_rect(history_wipe_rect(width, height), x, y)) return ID_CLEAR_HISTORY;
@@ -1497,9 +1636,15 @@ static void activate_id(HWND window, int id) {
     } else if (id == ID_NAV_CHANGELOG) {
         clear_result_selection();
         g_changelog_open = 1;
+        g_changelog_selected = 0;
+        g_changelog_scroll = 0;
         g_history_open = 0;
         g_memory_popup = 0;
         g_nav_open = 0;
+    } else if (id >= ID_CHANGELOG_TAB_BASE &&
+               id < ID_CHANGELOG_TAB_BASE + changelog_release_count()) {
+        g_changelog_selected = id - ID_CHANGELOG_TAB_BASE;
+        g_changelog_scroll = 0;
     } else if (id == ID_CHECK_UPDATES) {
         g_nav_open = 0;
         updater_check_now(window);
@@ -1694,7 +1839,14 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             POINT point = {(short)LOWORD(lparam), (short)HIWORD(lparam)};
             int wheel_steps = GET_WHEEL_DELTA_WPARAM(wparam) / WHEEL_DELTA;
             ScreenToClient(window, &point);
-            if (g_history_open && g_history_count) {
+            if (updater_is_modal()) return 0;
+            if (g_changelog_open && !g_nav_open) {
+                g_changelog_scroll -= wheel_steps * scale_px(54);
+                if (g_changelog_scroll < 0) g_changelog_scroll = 0;
+                if (g_changelog_scroll > g_changelog_scroll_max)
+                    g_changelog_scroll = g_changelog_scroll_max;
+                InvalidateRect(window, NULL, FALSE);
+            } else if (g_history_open && g_history_count) {
                 RECT client;
                 int visible, maximum;
                 GetClientRect(window, &client);
@@ -1718,7 +1870,23 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         }
         case WM_KEYDOWN: {
             int control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-            if (g_changelog_open) return 0;
+            if (updater_is_modal()) return 0;
+            if (g_changelog_open) {
+                switch (wparam) {
+                    case VK_UP: g_changelog_scroll -= scale_px(36); break;
+                    case VK_DOWN: g_changelog_scroll += scale_px(36); break;
+                    case VK_PRIOR: g_changelog_scroll -= scale_px(180); break;
+                    case VK_NEXT: g_changelog_scroll += scale_px(180); break;
+                    case VK_HOME: g_changelog_scroll = 0; break;
+                    case VK_END: g_changelog_scroll = g_changelog_scroll_max; break;
+                    default: return 0;
+                }
+                if (g_changelog_scroll < 0) g_changelog_scroll = 0;
+                if (g_changelog_scroll > g_changelog_scroll_max)
+                    g_changelog_scroll = g_changelog_scroll_max;
+                InvalidateRect(window, NULL, FALSE);
+                return 0;
+            }
             if (control) {
                 switch (wparam) {
                     case 'C': copy_display_to_clipboard(window); return 0;
@@ -1759,6 +1927,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             return 0;
         }
         case WM_CHAR:
+            if (updater_is_modal()) return 0;
             if (g_changelog_open) return 0;
             if (wparam != VK_RETURN && wparam != VK_BACK && wparam != VK_ESCAPE)
                 keyboard_character(window, (wchar_t)wparam);
