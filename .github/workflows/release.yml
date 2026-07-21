@@ -48,7 +48,7 @@ jobs:
           $line = "$hash  PersistentCalculator.exe`n"
           [System.IO.File]::WriteAllText("dist/PersistentCalculator.exe.sha256", $line, [System.Text.Encoding]::ASCII)
 
-      - name: Create release or replace this hotfix build
+      - name: Create release when this version is new
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,13 +57,7 @@ jobs:
           $tag = "v$env:VERSION"
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag `
-              dist/PersistentCalculator.exe `
-              dist/PersistentCalculator.exe.sha256 `
-              --clobber `
-              --repo $env:GITHUB_REPOSITORY
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            Write-Host "Replaced the existing $tag executable and checksum."
+            Write-Host "Release $tag already exists; leaving its assets immutable."
             exit 0
           }
           gh release create $tag `
