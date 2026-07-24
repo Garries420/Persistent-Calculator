@@ -1255,8 +1255,9 @@ static void draw_history_panel(HDC dc, int width, int height) {
 }
 
 static void draw_nav_mode_icon(HDC dc, ExtraMode mode, RECT row, COLORREF color) {
-    RECT icon = {row.left + scale_px(11), row.top + scale_px(10),
-                 row.left + scale_px(29), row.bottom - scale_px(10)};
+    /* The supplied artwork is intentionally detailed; render it 20% larger. */
+    RECT icon = {row.left + scale_px(9), row.top + scale_px(8),
+                 row.left + scale_px(31), row.bottom - scale_px(8)};
     int cx = (icon.left + icon.right) / 2;
     int cy = (icon.top + icon.bottom) / 2;
     if (mode >= MODE_STANDARD && mode < MODE_COUNT && g_mode_icons[mode]) {

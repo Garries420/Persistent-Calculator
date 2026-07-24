@@ -62,5 +62,6 @@ int extras_take_history(wchar_t *expression, size_t expression_capacity,
 double extras_convert_value(ExtraMode mode, int from_index, int to_index, double value);
 int extras_unit_count(ExtraMode mode);
 const wchar_t *extras_unit_name(ExtraMode mode, int index);
+int extras_currency_metadata_is_complete(void);
 
 #endif

@@ -98,12 +98,14 @@ typedef struct DateState {
     SYSTEMTIME first;
     SYSTEMTIME second;
     int add_mode;
-    int add_amount;
-    int add_unit;
+    int add_years;
+    int add_months;
+    int add_days;
     int subtract;
     int calendar_target;
     int calendar_year;
     int calendar_month;
+    int calendar_level;
 } DateState;
 
 typedef struct ExtraTextSelection {
@@ -444,6 +446,181 @@ typedef struct CurrencyOverride {
     int symbol_prefix;
 } CurrencyOverride;
 
+/*
+ * Frankfurter's live rates response deliberately contains only ISO codes and
+ * values.  Keep the accompanying display metadata in the executable so the
+ * picker remains useful offline and does not depend on Windows locale coverage.
+ * This table mirrors Frankfurter's World Currency Codes data for every code
+ * currently returned by its rates endpoint (retrieved 24 July 2026).
+ */
+static const CurrencyOverride FRANKFURTER_CURRENCY_METADATA[] = {
+    {L"AED", L"United Arab Emirates", L"United Arab Emirates Dirham", L"د.إ", 0},
+    {L"AFN", L"Afghanistan", L"Afghan Afghani", L"؋", 0},
+    {L"ALL", L"Albania", L"Albanian Lek", L"L", 0},
+    {L"AMD", L"Armenia", L"Armenian Dram", L"֏", 0},
+    {L"ANG", L"Curaçao", L"Netherlands Antillean Gulden", L"ƒ", 1},
+    {L"AOA", L"Angola", L"Angolan Kwanza", L"Kz", 0},
+    {L"ARS", L"Argentina", L"Argentine Peso", L"$", 1},
+    {L"AUD", L"Australia", L"Australian Dollar", L"$", 1},
+    {L"AWG", L"Aruba", L"Aruban Florin", L"ƒ", 0},
+    {L"AZN", L"Azerbaijan", L"Azerbaijani Manat", L"₼", 1},
+    {L"BAM", L"Bosnia and Herzegovina", L"Bosnia and Herzegovina Convertible Mark", L"КМ", 1},
+    {L"BBD", L"Barbados", L"Barbadian Dollar", L"$", 1},
+    {L"BDT", L"Bangladesh", L"Bangladeshi Taka", L"৳", 1},
+    {L"BHD", L"Bahrain", L"Bahraini Dinar", L"د.ب", 1},
+    {L"BIF", L"Burundi", L"Burundian Franc", L"Fr", 0},
+    {L"BMD", L"Bermuda", L"Bermudian Dollar", L"$", 1},
+    {L"BND", L"Brunei", L"Brunei Dollar", L"$", 1},
+    {L"BOB", L"Bolivia", L"Bolivian Boliviano", L"Bs.", 1},
+    {L"BRL", L"Brazil", L"Brazilian Real", L"R$", 1},
+    {L"BSD", L"Bahamas", L"Bahamian Dollar", L"$", 1},
+    {L"BTN", L"Bhutan", L"Bhutanese Ngultrum", L"Nu.", 0},
+    {L"BWP", L"Botswana", L"Botswana Pula", L"P", 1},
+    {L"BYN", L"Belarus", L"Belarusian Ruble", L"Br", 0},
+    {L"BZD", L"Belize", L"Belize Dollar", L"$", 1},
+    {L"CAD", L"Canada", L"Canadian Dollar", L"$", 1},
+    {L"CDF", L"Democratic Republic of the Congo", L"Congolese Franc", L"Fr", 0},
+    {L"CHF", L"Switzerland", L"Swiss Franc", L"CHF", 1},
+    {L"CLP", L"Chile", L"Chilean Peso", L"$", 1},
+    {L"CNH", L"China (offshore)", L"Chinese Renminbi Yuan Offshore", L"¥", 0},
+    {L"CNY", L"China", L"Chinese Renminbi Yuan", L"¥", 1},
+    {L"COP", L"Colombia", L"Colombian Peso", L"$", 1},
+    {L"CRC", L"Costa Rica", L"Costa Rican Colón", L"₡", 1},
+    {L"CUP", L"Cuba", L"Cuban Peso", L"$", 1},
+    {L"CVE", L"Cape Verde", L"Cape Verdean Escudo", L"$", 0},
+    {L"CZK", L"Czech Republic", L"Czech Koruna", L"Kč", 0},
+    {L"DJF", L"Djibouti", L"Djiboutian Franc", L"Fdj", 0},
+    {L"DKK", L"Denmark", L"Danish Krone", L"kr.", 0},
+    {L"DOP", L"Dominican Republic", L"Dominican Peso", L"$", 1},
+    {L"DZD", L"Algeria", L"Algerian Dinar", L"د.ج", 0},
+    {L"EGP", L"Egypt", L"Egyptian Pound", L"ج.م", 1},
+    {L"ERN", L"Eritrea", L"Eritrean Nakfa", L"Nfk", 0},
+    {L"ETB", L"Ethiopia", L"Ethiopian Birr", L"Br", 0},
+    {L"EUR", L"Europe", L"Euro", L"€", 1},
+    {L"FJD", L"Fiji", L"Fijian Dollar", L"$", 0},
+    {L"FKP", L"Falkland Islands", L"Falkland Pound", L"£", 0},
+    {L"GBP", L"United Kingdom", L"British Pound", L"£", 1},
+    {L"GEL", L"Georgia", L"Georgian Lari", L"₾", 0},
+    {L"GGP", L"Guernsey", L"Guernsey Pound", L"£", 0},
+    {L"GHS", L"Ghana", L"Ghanaian Cedi", L"₵", 1},
+    {L"GIP", L"Gibraltar", L"Gibraltar Pound", L"£", 1},
+    {L"GMD", L"Gambia", L"Gambian Dalasi", L"D", 0},
+    {L"GNF", L"Guinea", L"Guinean Franc", L"Fr", 0},
+    {L"GTQ", L"Guatemala", L"Guatemalan Quetzal", L"Q", 1},
+    {L"GYD", L"Guyana", L"Guyanese Dollar", L"$", 0},
+    {L"HKD", L"Hong Kong", L"Hong Kong Dollar", L"$", 1},
+    {L"HNL", L"Honduras", L"Honduran Lempira", L"L", 1},
+    {L"HTG", L"Haiti", L"Haitian Gourde", L"G", 0},
+    {L"HUF", L"Hungary", L"Hungarian Forint", L"Ft", 0},
+    {L"IDR", L"Indonesia", L"Indonesian Rupiah", L"Rp", 1},
+    {L"ILS", L"Israel", L"Israeli New Shekel", L"₪", 1},
+    {L"IMP", L"Isle of Man", L"Isle of Man Pound", L"£", 0},
+    {L"INR", L"India", L"Indian Rupee", L"₹", 1},
+    {L"IQD", L"Iraq", L"Iraqi Dinar", L"ع.د", 0},
+    {L"IRR", L"Iran", L"Iranian Rial", L"﷼", 1},
+    {L"ISK", L"Iceland", L"Icelandic Króna", L"kr.", 0},
+    {L"JEP", L"Jersey", L"Jersey Pound", L"£", 0},
+    {L"JMD", L"Jamaica", L"Jamaican Dollar", L"$", 1},
+    {L"JOD", L"Jordan", L"Jordanian Dinar", L"د.ا", 1},
+    {L"JPY", L"Japan", L"Japanese Yen", L"¥", 1},
+    {L"KES", L"Kenya", L"Kenyan Shilling", L"KSh", 1},
+    {L"KGS", L"Kyrgyzstan", L"Kyrgyzstani Som", L"som", 0},
+    {L"KHR", L"Cambodia", L"Cambodian Riel", L"៛", 0},
+    {L"KMF", L"Comoros", L"Comorian Franc", L"Fr", 0},
+    {L"KPW", L"North Korea", L"North Korean Won", L"₩", 0},
+    {L"KRW", L"South Korea", L"South Korean Won", L"₩", 1},
+    {L"KWD", L"Kuwait", L"Kuwaiti Dinar", L"د.ك", 1},
+    {L"KYD", L"Cayman Islands", L"Cayman Islands Dollar", L"$", 1},
+    {L"KZT", L"Kazakhstan", L"Kazakhstani Tenge", L"₸", 0},
+    {L"LAK", L"Laos", L"Lao Kip", L"₭", 0},
+    {L"LBP", L"Lebanon", L"Lebanese Pound", L"ل.ل", 1},
+    {L"LKR", L"Sri Lanka", L"Sri Lankan Rupee", L"₨", 0},
+    {L"LRD", L"Liberia", L"Liberian Dollar", L"$", 0},
+    {L"LSL", L"Lesotho", L"Lesotho Loti", L"L", 0},
+    {L"LYD", L"Libya", L"Libyan Dinar", L"ل.د", 0},
+    {L"MAD", L"Morocco", L"Moroccan Dirham", L"د.م.", 0},
+    {L"MDL", L"Moldova", L"Moldovan Leu", L"L", 0},
+    {L"MGA", L"Madagascar", L"Malagasy Ariary", L"Ar", 1},
+    {L"MKD", L"North Macedonia", L"Macedonian Denar", L"ден", 0},
+    {L"MMK", L"Myanmar", L"Myanmar Kyat", L"K", 0},
+    {L"MNT", L"Mongolia", L"Mongolian Tögrög", L"₮", 0},
+    {L"MOP", L"Macau", L"Macanese Pataca", L"P", 0},
+    {L"MRO", L"Mauritania", L"Mauritanian Ouguiya", L"UM", 0},
+    {L"MRU", L"Mauritania", L"Mauritanian Ouguiya", L"UM", 0},
+    {L"MUR", L"Mauritius", L"Mauritian Rupee", L"₨", 1},
+    {L"MVR", L"Maldives", L"Maldivian Rufiyaa", L"MVR", 0},
+    {L"MWK", L"Malawi", L"Malawian Kwacha", L"MK", 0},
+    {L"MXN", L"Mexico", L"Mexican Peso", L"$", 1},
+    {L"MYR", L"Malaysia", L"Malaysian Ringgit", L"RM", 1},
+    {L"MZN", L"Mozambique", L"Mozambican Metical", L"MTn", 1},
+    {L"NAD", L"Namibia", L"Namibian Dollar", L"$", 0},
+    {L"NGN", L"Nigeria", L"Nigerian Naira", L"₦", 1},
+    {L"NIO", L"Nicaragua", L"Nicaraguan Córdoba", L"C$", 1},
+    {L"NOK", L"Norway", L"Norwegian Krone", L"kr", 0},
+    {L"NPR", L"Nepal", L"Nepalese Rupee", L"Rs.", 1},
+    {L"NZD", L"New Zealand", L"New Zealand Dollar", L"$", 1},
+    {L"OMR", L"Oman", L"Omani Rial", L"ر.ع.", 1},
+    {L"PAB", L"Panama", L"Panamanian Balboa", L"B/.", 1},
+    {L"PEN", L"Peru", L"Peruvian Sol", L"S/", 1},
+    {L"PGK", L"Papua New Guinea", L"Papua New Guinean Kina", L"K", 0},
+    {L"PHP", L"Philippines", L"Philippine Peso", L"₱", 1},
+    {L"PKR", L"Pakistan", L"Pakistani Rupee", L"₨", 1},
+    {L"PLN", L"Poland", L"Polish Złoty", L"zł", 0},
+    {L"PYG", L"Paraguay", L"Paraguayan Guaraní", L"₲", 1},
+    {L"QAR", L"Qatar", L"Qatari Riyal", L"ر.ق", 0},
+    {L"RON", L"Romania", L"Romanian Leu", L"Lei", 0},
+    {L"RSD", L"Serbia", L"Serbian Dinar", L"RSD", 0},
+    {L"RUB", L"Russia", L"Russian Ruble", L"₽", 0},
+    {L"RWF", L"Rwanda", L"Rwandan Franc", L"FRw", 0},
+    {L"SAR", L"Saudi Arabia", L"Saudi Riyal", L"ر.س", 1},
+    {L"SBD", L"Solomon Islands", L"Solomon Islands Dollar", L"$", 0},
+    {L"SCR", L"Seychelles", L"Seychellois Rupee", L"₨", 0},
+    {L"SDG", L"Sudan", L"Sudanese Pound", L"£", 1},
+    {L"SEK", L"Sweden", L"Swedish Krona", L"kr", 0},
+    {L"SGD", L"Singapore", L"Singapore Dollar", L"$", 1},
+    {L"SHP", L"Saint Helena", L"Saint Helenian Pound", L"£", 0},
+    {L"SLE", L"Sierra Leone", L"New Leone", L"Le", 0},
+    {L"SOS", L"Somalia", L"Somali Shilling", L"Sh", 0},
+    {L"SRD", L"Suriname", L"Surinamese Dollar", L"$", 0},
+    {L"SSP", L"South Sudan", L"South Sudanese Pound", L"£", 0},
+    {L"STN", L"São Tomé and Príncipe", L"São Tomé and Príncipe Second Dobra", L"Db", 0},
+    {L"SVC", L"El Salvador", L"Salvadoran Colón", L"₡", 1},
+    {L"SYP", L"Syrian Arab Republic", L"Syrian Pound", L"£S", 0},
+    {L"SZL", L"Eswatini", L"Swazi Lilangeni", L"E", 1},
+    {L"THB", L"Thailand", L"Thai Baht", L"฿", 1},
+    {L"TJS", L"Tajikistan", L"Tajikistani Somoni", L"ЅМ", 0},
+    {L"TMT", L"Turkmenistan", L"Turkmenistani Manat", L"m", 0},
+    {L"TND", L"Tunisia", L"Tunisian Dinar", L"د.ت", 0},
+    {L"TOP", L"Tonga", L"Tongan Paʻanga", L"T$", 1},
+    {L"TRY", L"Turkey", L"Turkish Lira", L"₺", 1},
+    {L"TTD", L"Trinidad and Tobago", L"Trinidad and Tobago Dollar", L"$", 0},
+    {L"TWD", L"Taiwan", L"New Taiwan Dollar", L"$", 1},
+    {L"TZS", L"Tanzania", L"Tanzanian Shilling", L"Sh", 1},
+    {L"UAH", L"Ukraine", L"Ukrainian Hryvnia", L"₴", 0},
+    {L"UGX", L"Uganda", L"Ugandan Shilling", L"USh", 0},
+    {L"USD", L"United States", L"United States Dollar", L"$", 1},
+    {L"UYU", L"Uruguay", L"Uruguayan Peso", L"$U", 1},
+    {L"UZS", L"Uzbekistan", L"Uzbekistan Som", L"so'm", 0},
+    {L"VES", L"Venezuela", L"Venezuelan Bolívar Soberano", L"Bs", 1},
+    {L"VND", L"Vietnam", L"Vietnamese Đồng", L"₫", 0},
+    {L"VUV", L"Vanuatu", L"Vanuatu Vatu", L"Vt", 1},
+    {L"WST", L"Samoa", L"Samoan Tala", L"T", 0},
+    {L"XAF", L"Central Africa", L"Central African CFA Franc", L"CFA", 0},
+    {L"XAG", L"Precious metals", L"Silver (Troy Ounce)", L"oz t", 0},
+    {L"XAU", L"Precious metals", L"Gold (Troy Ounce)", L"oz t", 0},
+    {L"XCD", L"Eastern Caribbean", L"East Caribbean Dollar", L"$", 1},
+    {L"XCG", L"Curaçao and Sint Maarten", L"Caribbean Guilder", L"Cg", 1},
+    {L"XDR", L"International", L"Special Drawing Rights", L"SDR", 0},
+    {L"XOF", L"West Africa", L"West African CFA Franc", L"Fr", 0},
+    {L"XPD", L"Precious metals", L"Palladium", L"oz t", 0},
+    {L"XPF", L"French Pacific territories", L"CFP Franc", L"Fr", 0},
+    {L"XPT", L"Precious metals", L"Platinum", L"oz t", 0},
+    {L"YER", L"Yemen", L"Yemeni Rial", L"﷼", 0},
+    {L"ZAR", L"South Africa", L"South African Rand", L"R", 1},
+    {L"ZMW", L"Zambia", L"Zambian Kwacha", L"K", 1},
+    {L"ZWG", L"Zimbabwe", L"Zimbabwe Gold", L"ZiG", 0},
+};
+
 static const CurrencyOverride CURRENCY_OVERRIDES[] = {
     {L"AED", L"United Arab Emirates", L"Dirham", L"د.إ", 0},
     {L"AUD", L"Australia", L"Dollar", L"A$", 1},
@@ -485,6 +662,25 @@ static const CurrencyOverride CURRENCY_OVERRIDES[] = {
     {L"ZAR", L"South Africa", L"Rand", L"R", 1}
 };
 
+int extras_currency_metadata_is_complete(void) {
+    size_t index;
+    if (_countof(FRANKFURTER_CURRENCY_METADATA) != 165) return 0;
+    for (index = 0; index < _countof(FRANKFURTER_CURRENCY_METADATA); ++index) {
+        const CurrencyOverride *item = &FRANKFURTER_CURRENCY_METADATA[index];
+        if (!item->code || wcslen(item->code) != 3 ||
+            !item->location || !*item->location ||
+            !item->name || !*item->name ||
+            !item->symbol || !*item->symbol ||
+            wcscmp(item->name, L"Currency") == 0)
+            return 0;
+        if (index &&
+            _wcsicmp(FRANKFURTER_CURRENCY_METADATA[index - 1].code,
+                     item->code) >= 0)
+            return 0;
+    }
+    return 1;
+}
+
 static BOOL CALLBACK currency_locale_callback(LPWSTR locale_name, DWORD flags,
                                                LPARAM parameter) {
     CurrencyRate *currency = (CurrencyRate *)parameter;
@@ -516,6 +712,18 @@ static void populate_currency_metadata(CurrencyRate *currency) {
     currency->symbol_prefix = 0;
     EnumSystemLocalesEx(currency_locale_callback, LOCALE_ALL,
                         (LPARAM)currency, NULL);
+    for (index = 0; index < _countof(FRANKFURTER_CURRENCY_METADATA); ++index) {
+        const CurrencyOverride *metadata = &FRANKFURTER_CURRENCY_METADATA[index];
+        if (_wcsicmp(metadata->code, currency->code) == 0) {
+            copy_wide(currency->location, _countof(currency->location),
+                      metadata->location);
+            copy_wide(currency->name, _countof(currency->name), metadata->name);
+            copy_wide(currency->symbol, _countof(currency->symbol),
+                      metadata->symbol);
+            currency->symbol_prefix = metadata->symbol_prefix;
+            break;
+        }
+    }
     for (index = 0; index < _countof(CURRENCY_OVERRIDES); ++index) {
         const CurrencyOverride *override = &CURRENCY_OVERRIDES[index];
         if (_wcsicmp(override->code, currency->code) == 0) {
@@ -1468,7 +1676,6 @@ void extras_initialize(HWND owner) {
     g_date.first = today;
     g_date.second = today;
     add_days(&g_date.second, 1);
-    g_date.add_amount = 1;
     build_currency_path();
     load_currency_cache();
     copy_wide(g_currency_status, _countof(g_currency_status),
@@ -2068,16 +2275,8 @@ static void format_date(const SYSTEMTIME *date, wchar_t *output, size_t capacity
     output[capacity - 1] = L'\0';
 }
 
-static RECT date_tab_rect(int index, int width, UINT dpi) {
-    int margin = sx(8, dpi);
-    int gap = sx(4, dpi);
-    int available = width - margin * 2 - gap;
-    RECT rect = {
-        margin + (available * index) / 2 + gap * index,
-        sx(61, dpi),
-        margin + (available * (index + 1)) / 2 + gap * index,
-        sx(98, dpi)
-    };
+static RECT date_mode_rect(int width, UINT dpi) {
+    RECT rect = {sx(12, dpi), sx(61, dpi), width - sx(12, dpi), sx(105, dpi)};
     return rect;
 }
 
@@ -2088,14 +2287,55 @@ static RECT date_field_rect(int index, int width, UINT dpi) {
 }
 
 static RECT date_result_rect(int width, int height, UINT dpi) {
-    RECT rect = {sx(12, dpi), sx(g_date.add_mode ? 361 : 310, dpi),
+    RECT rect = {sx(18, dpi), sx(g_date.add_mode ? 374 : 310, dpi),
                  width - sx(12, dpi), height - sx(18, dpi)};
+    return rect;
+}
+
+static RECT date_radio_rect(int subtract, int width, UINT dpi) {
+    int available = width - sx(32, dpi);
+    RECT rect = {
+        sx(16, dpi) + subtract * (available / 2),
+        sx(194, dpi),
+        sx(16, dpi) + (subtract + 1) * (available / 2),
+        sx(239, dpi)
+    };
+    return rect;
+}
+
+static RECT date_amount_rect(int index, int width, UINT dpi) {
+    int margin = sx(16, dpi);
+    int gap = sx(10, dpi);
+    int available = width - margin * 2 - gap * 2;
+    RECT rect = {
+        margin + (available * index) / 3 + gap * index,
+        sx(277, dpi),
+        margin + (available * (index + 1)) / 3 + gap * index,
+        sx(323, dpi)
+    };
+    return rect;
+}
+
+static RECT date_amount_step_rect(int index, int increment,
+                                  int width, UINT dpi) {
+    RECT rect = date_amount_rect(index, width, dpi);
+    if (increment)
+        rect.left = rect.right - sx(24, dpi);
+    else
+        rect.right = rect.left + sx(24, dpi);
     return rect;
 }
 
 static RECT date_calendar_panel_rect(int width, int height, UINT dpi) {
     RECT rect = {sx(4, dpi), sx(105, dpi), width - sx(4, dpi),
                  height - sx(8, dpi)};
+    return rect;
+}
+
+static RECT date_calendar_header_rect(int width, int height, UINT dpi) {
+    RECT panel = date_calendar_panel_rect(width, height, dpi);
+    RECT rect = {panel.left + sx(58, dpi), panel.top + sx(8, dpi),
+                 panel.right - sx(58, dpi), panel.top + sx(48, dpi)};
     return rect;
 }
 
@@ -2106,6 +2346,25 @@ static RECT date_calendar_arrow_rect(int next, int width, int height, UINT dpi) 
         panel.top + sx(8, dpi),
         next ? panel.right - sx(8, dpi) : panel.left + sx(53, dpi),
         panel.top + sx(48, dpi)
+    };
+    return rect;
+}
+
+static RECT date_calendar_choice_rect(int cell, int width, int height,
+                                      UINT dpi) {
+    RECT panel = date_calendar_panel_rect(width, height, dpi);
+    int margin = sx(9, dpi);
+    int gap = sx(3, dpi);
+    int grid_top = panel.top + sx(58, dpi);
+    int available_width = panel.right - panel.left - margin * 2 - gap * 3;
+    int available_height = panel.bottom - grid_top - sx(10, dpi) - gap * 3;
+    int column = cell % 4;
+    int row = cell / 4;
+    RECT rect = {
+        panel.left + margin + (available_width * column) / 4 + gap * column,
+        grid_top + (available_height * row) / 4 + gap * row,
+        panel.left + margin + (available_width * (column + 1)) / 4 + gap * column,
+        grid_top + (available_height * (row + 1)) / 4 + gap * row
     };
     return rect;
 }
@@ -2160,6 +2419,15 @@ static SYSTEMTIME date_calendar_cell_value(int cell) {
     return value;
 }
 
+static SYSTEMTIME date_adjusted_result(void) {
+    SYSTEMTIME result = g_date.first;
+    int sign = g_date.subtract ? -1 : 1;
+    adjust_date(&result, 2, sign * g_date.add_years);
+    adjust_date(&result, 1, sign * g_date.add_months);
+    adjust_date(&result, 0, sign * g_date.add_days);
+    return result;
+}
+
 static void draw_small_calendar_icon(HDC dc, RECT rect, UINT dpi, COLORREF color) {
     int size = sx(16, dpi);
     RECT icon = {rect.right - sx(28, dpi),
@@ -2205,23 +2473,38 @@ static void draw_date_calendar(HDC dc, int width, int height, UINT dpi,
         L"Mo", L"Tu", L"We", L"Th", L"Fr", L"Sa", L"Su"
     };
     RECT panel = date_calendar_panel_rect(width, height, dpi);
-    RECT header = {panel.left + sx(58, dpi), panel.top + sx(8, dpi),
-                   panel.right - sx(58, dpi), panel.top + sx(48, dpi)};
-    wchar_t month[80];
+    RECT header = date_calendar_header_rect(width, height, dpi);
+    wchar_t heading[80];
     SYSTEMTIME month_date;
     HFONT normal = extra_font(dpi, 10, FW_NORMAL);
     HFONT title = extra_font(dpi, 12, FW_SEMIBOLD);
     int index;
     round_color(dc, &panel, RGB(43, 43, 43), sx(7, dpi));
-    ZeroMemory(&month_date, sizeof(month_date));
-    month_date.wYear = (WORD)g_date.calendar_year;
-    month_date.wMonth = (WORD)g_date.calendar_month;
-    month_date.wDay = 1;
-    if (!GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &month_date,
-                         L"MMMM yyyy", month, (int)_countof(month), NULL))
-        _snwprintf(month, _countof(month), L"%d-%02d",
-                   g_date.calendar_year, g_date.calendar_month);
-    text_color(dc, month, header, title, RGB(246, 246, 246),
+    if (g_date.calendar_level == 0) {
+        ZeroMemory(&month_date, sizeof(month_date));
+        month_date.wYear = (WORD)g_date.calendar_year;
+        month_date.wMonth = (WORD)g_date.calendar_month;
+        month_date.wDay = 1;
+        if (!GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &month_date,
+                             L"MMMM yyyy", heading,
+                             (int)_countof(heading), NULL))
+            _snwprintf(heading, _countof(heading), L"%d-%02d",
+                       g_date.calendar_year, g_date.calendar_month);
+    } else if (g_date.calendar_level == 1) {
+        _snwprintf(heading, _countof(heading), L"%d", g_date.calendar_year);
+    } else {
+        int decade = (g_date.calendar_year / 10) * 10;
+        _snwprintf(heading, _countof(heading), L"%d - %d",
+                   decade, decade + 9);
+    }
+    heading[_countof(heading) - 1] = L'\0';
+    if (EXTRA_ID_BASE + 219 == hot_id ||
+        EXTRA_ID_BASE + 219 == pressed_id)
+        round_color(dc, &header,
+                    EXTRA_ID_BASE + 219 == pressed_id
+                        ? RGB(78, 78, 78) : RGB(58, 58, 58),
+                    sx(4, dpi));
+    text_color(dc, heading, header, title, RGB(246, 246, 246),
                DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     for (index = 0; index < 2; ++index) {
         int id = EXTRA_ID_BASE + 220 + index;
@@ -2232,35 +2515,81 @@ static void draw_date_calendar(HDC dc, int width, int height, UINT dpi,
         text_color(dc, index ? L"›" : L"‹", rect, title, RGB(246, 246, 246),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
-    for (index = 0; index < 7; ++index) {
-        RECT cell = date_calendar_cell_rect(index, width, height, dpi);
-        cell.top = panel.top + sx(50, dpi);
-        cell.bottom = panel.top + sx(84, dpi);
-        text_color(dc, weekdays[index], cell, normal, RGB(220, 222, 223),
-                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    }
-    for (index = 0; index < 42; ++index) {
-        SYSTEMTIME value = date_calendar_cell_value(index);
+    if (g_date.calendar_level == 0) {
+        for (index = 0; index < 7; ++index) {
+            RECT cell = date_calendar_cell_rect(index, width, height, dpi);
+            cell.top = panel.top + sx(50, dpi);
+            cell.bottom = panel.top + sx(84, dpi);
+            text_color(dc, weekdays[index], cell, normal, RGB(220, 222, 223),
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        for (index = 0; index < 42; ++index) {
+            SYSTEMTIME value = date_calendar_cell_value(index);
+            const SYSTEMTIME *selected = g_date.calendar_target == 2
+                                             ? &g_date.second : &g_date.first;
+            int id = EXTRA_ID_BASE + 222 + index;
+            RECT cell = date_calendar_cell_rect(index, width, height, dpi);
+            wchar_t day[8];
+            COLORREF color = value.wMonth == g_date.calendar_month
+                                 ? RGB(246, 246, 246) : RGB(145, 149, 150);
+            if (value.wYear == selected->wYear &&
+                value.wMonth == selected->wMonth &&
+                value.wDay == selected->wDay) {
+                round_color(dc, &cell, RGB(156, 198, 217), sx(18, dpi));
+                color = RGB(24, 35, 40);
+            } else if (id == pressed_id || id == hot_id) {
+                round_color(dc, &cell,
+                            id == pressed_id ? RGB(78, 78, 78) : RGB(69, 69, 69),
+                            sx(18, dpi));
+            }
+            _snwprintf(day, _countof(day), L"%u", value.wDay);
+            text_color(dc, day, cell, normal, color,
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+    } else {
         const SYSTEMTIME *selected = g_date.calendar_target == 2
                                          ? &g_date.second : &g_date.first;
-        int id = EXTRA_ID_BASE + 222 + index;
-        RECT cell = date_calendar_cell_rect(index, width, height, dpi);
-        wchar_t day[8];
-        COLORREF color = value.wMonth == g_date.calendar_month
-                             ? RGB(246, 246, 246) : RGB(145, 149, 150);
-        if (value.wYear == selected->wYear &&
-            value.wMonth == selected->wMonth &&
-            value.wDay == selected->wDay) {
-            round_color(dc, &cell, RGB(156, 198, 217), sx(18, dpi));
-            color = RGB(24, 35, 40);
-        } else if (id == pressed_id || id == hot_id) {
-            round_color(dc, &cell,
-                        id == pressed_id ? RGB(78, 78, 78) : RGB(69, 69, 69),
-                        sx(18, dpi));
+        int decade = (g_date.calendar_year / 10) * 10;
+        int first_year = decade - 3;
+        for (index = 0; index < 16; ++index) {
+            int id = EXTRA_ID_BASE + 222 + index;
+            RECT cell = date_calendar_choice_rect(index, width, height, dpi);
+            wchar_t label[32];
+            int selected_cell;
+            COLORREF color = RGB(246, 246, 246);
+            if (g_date.calendar_level == 1) {
+                int year = g_date.calendar_year + index / 12;
+                int month = index % 12 + 1;
+                SYSTEMTIME value;
+                ZeroMemory(&value, sizeof(value));
+                value.wYear = (WORD)year;
+                value.wMonth = (WORD)month;
+                value.wDay = 1;
+                if (!GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &value,
+                                     L"MMM", label, (int)_countof(label), NULL))
+                    _snwprintf(label, _countof(label), L"%d", month);
+                selected_cell = selected->wYear == year &&
+                                selected->wMonth == month;
+                if (index >= 12) color = RGB(145, 149, 150);
+            } else {
+                int year = first_year + index;
+                _snwprintf(label, _countof(label), L"%d", year);
+                selected_cell = selected->wYear == year;
+                if (year < decade || year > decade + 9)
+                    color = RGB(145, 149, 150);
+            }
+            label[_countof(label) - 1] = L'\0';
+            if (selected_cell) {
+                round_color(dc, &cell, RGB(156, 198, 217), sx(25, dpi));
+                color = RGB(24, 35, 40);
+            } else if (id == pressed_id || id == hot_id) {
+                round_color(dc, &cell,
+                            id == pressed_id ? RGB(78, 78, 78) : RGB(69, 69, 69),
+                            sx(20, dpi));
+            }
+            text_color(dc, label, cell, normal, color,
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
-        _snwprintf(day, _countof(day), L"%u", value.wDay);
-        text_color(dc, day, cell, normal, color,
-                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     DeleteObject(title);
     DeleteObject(normal);
@@ -2271,14 +2600,22 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
     HFONT normal = extra_font(dpi, 11, FW_NORMAL);
     HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
     int index;
-    for (index = 0; index < 2; ++index) {
-        int id = EXTRA_ID_BASE + 200 + index;
-        RECT rect = date_tab_rect(index, width, dpi);
-        COLORREF fill = g_date.add_mode == index ? RGB(73, 85, 90) : RGB(50, 50, 50);
-        if (id == hot_id) fill = RGB(69, 69, 69);
-        round_color(dc, &rect, fill, sx(5, dpi));
-        text_color(dc, index == 0 ? L"Difference" : L"Add or subtract",
-                   rect, small_font, RGB(246, 246, 246),
+    {
+        int id = EXTRA_ID_BASE + 200;
+        RECT rect = date_mode_rect(width, dpi);
+        RECT text = rect;
+        COLORREF fill = id == pressed_id ? RGB(58, 58, 58) :
+                        id == hot_id ? RGB(48, 48, 48) : RGB(31, 31, 31);
+        round_color(dc, &rect, fill, sx(4, dpi));
+        text.left += sx(6, dpi);
+        text.right -= sx(28, dpi);
+        text_color(dc, g_date.add_mode ? L"Add or subtract days"
+                                      : L"Difference between dates",
+                   text, normal, RGB(246, 246, 246),
+                   DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        text.left = text.right;
+        text.right = rect.right - sx(4, dpi);
+        text_color(dc, L"⌄", text, normal, RGB(190, 194, 195),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     {
@@ -2305,39 +2642,87 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
         fit_text(dc, result, result_rect, dpi, 25, 12, FW_SEMIBOLD,
                  RGB(246, 246, 246), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     } else {
-        SYSTEMTIME result = g_date.first;
-        wchar_t result_text[32];
-        wchar_t amount[64];
-        RECT amount_rect = {sx(12, dpi), sx(201, dpi),
-                            width - sx(12, dpi), sx(260, dpi)};
+        SYSTEMTIME result = date_adjusted_result();
+        wchar_t result_text[80];
         RECT result_rect = date_result_rect(width, height, dpi);
-        adjust_date(&result, g_date.add_unit,
-                    (g_date.subtract ? -1 : 1) * g_date.add_amount);
-        format_date(&result, result_text, _countof(result_text));
-        _snwprintf(amount, _countof(amount), L"%ls %d %ls",
-                   g_date.subtract ? L"Subtract" : L"Add", g_date.add_amount,
-                   g_date.add_unit == 0 ? L"days" :
-                   g_date.add_unit == 1 ? L"months" : L"years");
-        text_color(dc, amount, amount_rect, normal, RGB(246, 246, 246),
-                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        for (index = 0; index < 6; ++index) {
-            static const wchar_t *const labels[] = {
-                L"− amount", L"+ amount", L"Add/Subtract",
-                L"Days", L"Months", L"Years"
-            };
+        RECT date_label = {sx(18, dpi), sx(344, dpi),
+                           width - sx(18, dpi), sx(373, dpi)};
+        static const wchar_t *const amount_labels[] = {
+            L"Years", L"Months", L"Days"
+        };
+        int values[] = {g_date.add_years, g_date.add_months, g_date.add_days};
+        format_date_long(&result, result_text, _countof(result_text));
+        for (index = 0; index < 2; ++index) {
             int id = EXTRA_ID_BASE + 240 + index;
-            RECT rect = table_button_rect(index, 3, 2, sx(261, dpi),
-                                          width, sx(347, dpi), dpi);
-            COLORREF fill = (index >= 3 && g_date.add_unit == index - 3) ||
-                            (index == 2 && g_date.subtract)
-                                ? RGB(73, 85, 90) : RGB(50, 50, 50);
-            if (id == hot_id) fill = RGB(69, 69, 69);
-            round_color(dc, &rect, fill, sx(4, dpi));
-            text_color(dc, labels[index], rect, small_font, RGB(246, 246, 246),
+            RECT rect = date_radio_rect(index, width, dpi);
+            RECT circle = {rect.left, rect.top + sx(12, dpi),
+                           rect.left + sx(20, dpi), rect.top + sx(32, dpi)};
+            RECT label = rect;
+            HPEN pen = CreatePen(PS_SOLID, sx(1, dpi), RGB(190, 194, 195));
+            HBRUSH brush = CreateSolidBrush(
+                g_date.subtract == index ? RGB(156, 198, 217) : RGB(31, 31, 31));
+            HGDIOBJ old_pen = SelectObject(dc, pen);
+            HGDIOBJ old_brush = SelectObject(dc, brush);
+            if (id == hot_id || id == pressed_id)
+                round_color(dc, &rect, id == pressed_id
+                                           ? RGB(58, 58, 58) : RGB(48, 48, 48),
+                            sx(4, dpi));
+            Ellipse(dc, circle.left, circle.top, circle.right, circle.bottom);
+            if (g_date.subtract == index) {
+                RECT dot = {circle.left + sx(6, dpi), circle.top + sx(6, dpi),
+                            circle.right - sx(6, dpi), circle.bottom - sx(6, dpi)};
+                HBRUSH dot_brush = CreateSolidBrush(RGB(24, 35, 40));
+                SelectObject(dc, dot_brush);
+                Ellipse(dc, dot.left, dot.top, dot.right, dot.bottom);
+                SelectObject(dc, brush);
+                DeleteObject(dot_brush);
+            }
+            SelectObject(dc, old_brush);
+            SelectObject(dc, old_pen);
+            DeleteObject(brush);
+            DeleteObject(pen);
+            label.left += sx(28, dpi);
+            text_color(dc, index ? L"Subtract" : L"Add", label, normal,
+                       RGB(246, 246, 246),
+                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        }
+        for (index = 0; index < 3; ++index) {
+            RECT rect = date_amount_rect(index, width, dpi);
+            RECT label = {rect.left, sx(247, dpi), rect.right, sx(275, dpi)};
+            RECT decrement = date_amount_step_rect(index, 0, width, dpi);
+            RECT increment = date_amount_step_rect(index, 1, width, dpi);
+            RECT value = rect;
+            wchar_t number[24];
+            int decrement_id = EXTRA_ID_BASE + 242 + index * 2;
+            int increment_id = decrement_id + 1;
+            round_color(dc, &rect, RGB(50, 50, 50), sx(4, dpi));
+            if (decrement_id == hot_id || decrement_id == pressed_id)
+                round_color(dc, &decrement,
+                            decrement_id == pressed_id
+                                ? RGB(78, 78, 78) : RGB(69, 69, 69),
+                            sx(4, dpi));
+            if (increment_id == hot_id || increment_id == pressed_id)
+                round_color(dc, &increment,
+                            increment_id == pressed_id
+                                ? RGB(78, 78, 78) : RGB(69, 69, 69),
+                            sx(4, dpi));
+            text_color(dc, amount_labels[index], label, small_font,
+                       RGB(190, 194, 195),
+                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            text_color(dc, L"−", decrement, normal, RGB(246, 246, 246),
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            text_color(dc, L"+", increment, normal, RGB(246, 246, 246),
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            value.left = decrement.right;
+            value.right = increment.left;
+            _snwprintf(number, _countof(number), L"%d", values[index]);
+            text_color(dc, number, value, normal, RGB(246, 246, 246),
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
-        fit_text(dc, result_text, result_rect, dpi, 27, 13, FW_SEMIBOLD,
-                 RGB(246, 246, 246), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text_color(dc, L"Date", date_label, small_font, RGB(170, 175, 176),
+                   DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        fit_text(dc, result_text, result_rect, dpi, 14, 9, FW_NORMAL,
+                 RGB(246, 246, 246), DT_LEFT | DT_TOP | DT_SINGLELINE);
     }
     if (g_date.calendar_target)
         draw_date_calendar(dc, width, height, dpi, hot_id, pressed_id);
@@ -2793,19 +3178,20 @@ static int extra_get_text_field(int field, int width, int height, UINT dpi,
         }
         if (field == EXTRA_TEXT_DATE_RESULT) {
             output->rect = date_result_rect(width, height, dpi);
-            output->format = DT_CENTER | DT_VCENTER | DT_SINGLELINE;
             if (g_date.add_mode) {
-                adjust_date(&result, g_date.add_unit,
-                            (g_date.subtract ? -1 : 1) * g_date.add_amount);
-                format_date(&result, output->text, _countof(output->text));
-                output->points = 27;
-                output->minimum_points = 13;
+                result = date_adjusted_result();
+                format_date_long(&result, output->text, _countof(output->text));
+                output->points = 14;
+                output->minimum_points = 9;
+                output->weight = FW_NORMAL;
+                output->format = DT_LEFT | DT_TOP | DT_SINGLELINE;
             } else {
                 days = date_difference_days(&g_date.first, &g_date.second);
                 _snwprintf(output->text, _countof(output->text),
                            L"%lld day%ls apart", days, days == 1 ? L"" : L"s");
                 output->points = 25;
                 output->minimum_points = 12;
+                output->format = DT_CENTER | DT_VCENTER | DT_SINGLELINE;
             }
             output->text[_countof(output->text) - 1] = L'\0';
             return 1;
@@ -3360,28 +3746,39 @@ int extras_hit_test(int x, int y, int width, int height, UINT dpi) {
         }
     } else if (g_mode == MODE_DATE) {
         if (g_date.calendar_target) {
+            if (inside(date_calendar_header_rect(width, height, dpi), x, y))
+                return EXTRA_ID_BASE + 219;
             if (inside(date_calendar_arrow_rect(0, width, height, dpi), x, y))
                 return EXTRA_ID_BASE + 220;
             if (inside(date_calendar_arrow_rect(1, width, height, dpi), x, y))
                 return EXTRA_ID_BASE + 221;
-            for (index = 0; index < 42; ++index)
-                if (inside(date_calendar_cell_rect(index, width, height, dpi), x, y))
+            for (index = 0;
+                 index < (g_date.calendar_level == 0 ? 42 : 16);
+                 ++index)
+                if (inside(g_date.calendar_level == 0
+                               ? date_calendar_cell_rect(index, width, height, dpi)
+                               : date_calendar_choice_rect(index, width, height, dpi),
+                           x, y))
                     return EXTRA_ID_BASE + 222 + index;
             return -1;
         }
-        for (index = 0; index < 2; ++index)
-            if (inside(date_tab_rect(index, width, dpi), x, y))
-                return EXTRA_ID_BASE + 200 + index;
+        if (inside(date_mode_rect(width, dpi), x, y))
+            return EXTRA_ID_BASE + 200;
         if (inside(date_field_rect(0, width, dpi), x, y))
             return EXTRA_ID_BASE + 210;
         if (!g_date.add_mode &&
             inside(date_field_rect(1, width, dpi), x, y))
             return EXTRA_ID_BASE + 211;
         if (g_date.add_mode) {
-            for (index = 0; index < 6; ++index)
-                if (inside(table_button_rect(index, 3, 2, sx(261, dpi),
-                                             width, sx(347, dpi), dpi), x, y))
+            for (index = 0; index < 2; ++index)
+                if (inside(date_radio_rect(index, width, dpi), x, y))
                     return EXTRA_ID_BASE + 240 + index;
+            for (index = 0; index < 3; ++index) {
+                if (inside(date_amount_step_rect(index, 0, width, dpi), x, y))
+                    return EXTRA_ID_BASE + 242 + index * 2;
+                if (inside(date_amount_step_rect(index, 1, width, dpi), x, y))
+                    return EXTRA_ID_BASE + 243 + index * 2;
+            }
         }
     } else if (g_mode >= MODE_CURRENCY) {
         if (g_converter.picker_open) {
@@ -3552,28 +3949,56 @@ static void activate_programmer_control(int id) {
 }
 
 static void activate_date(int id) {
-    if (id >= EXTRA_ID_BASE + 200 && id < EXTRA_ID_BASE + 202) {
-        g_date.add_mode = id - (EXTRA_ID_BASE + 200);
+    if (id == EXTRA_ID_BASE + 200) {
+        g_date.add_mode = !g_date.add_mode;
         g_date.calendar_target = 0;
         return;
     }
     if (g_date.calendar_target) {
-        if (id == EXTRA_ID_BASE + 220 || id == EXTRA_ID_BASE + 221) {
-            int value = g_date.calendar_year * 12 + g_date.calendar_month - 1 +
-                        (id == EXTRA_ID_BASE + 221 ? 1 : -1);
-            if (value < 1601 * 12) value = 1601 * 12;
-            if (value > 9999 * 12 + 11) value = 9999 * 12 + 11;
-            g_date.calendar_year = value / 12;
-            g_date.calendar_month = value % 12 + 1;
+        if (id == EXTRA_ID_BASE + 219) {
+            if (g_date.calendar_level < 2) ++g_date.calendar_level;
+        } else if (id == EXTRA_ID_BASE + 220 ||
+                   id == EXTRA_ID_BASE + 221) {
+            int direction = id == EXTRA_ID_BASE + 221 ? 1 : -1;
+            if (g_date.calendar_level == 0) {
+                int value = g_date.calendar_year * 12 +
+                            g_date.calendar_month - 1 + direction;
+                if (value < 1601 * 12) value = 1601 * 12;
+                if (value > 9999 * 12 + 11) value = 9999 * 12 + 11;
+                g_date.calendar_year = value / 12;
+                g_date.calendar_month = value % 12 + 1;
+            } else if (g_date.calendar_level == 1) {
+                g_date.calendar_year += direction;
+                if (g_date.calendar_year < 1601) g_date.calendar_year = 1601;
+                if (g_date.calendar_year > 9998) g_date.calendar_year = 9998;
+            } else {
+                g_date.calendar_year += direction * 10;
+                if (g_date.calendar_year < 1610) g_date.calendar_year = 1610;
+                if (g_date.calendar_year > 9990) g_date.calendar_year = 9990;
+            }
         } else if (id >= EXTRA_ID_BASE + 222 &&
-                   id < EXTRA_ID_BASE + 222 + 42) {
-            SYSTEMTIME selected = date_calendar_cell_value(
-                id - (EXTRA_ID_BASE + 222));
-            if (g_date.calendar_target == 2)
-                g_date.second = selected;
-            else
-                g_date.first = selected;
-            g_date.calendar_target = 0;
+                   id < EXTRA_ID_BASE + 222 +
+                        (g_date.calendar_level == 0 ? 42 : 16)) {
+            int cell = id - (EXTRA_ID_BASE + 222);
+            if (g_date.calendar_level == 0) {
+                SYSTEMTIME selected = date_calendar_cell_value(cell);
+                if (g_date.calendar_target == 2)
+                    g_date.second = selected;
+                else
+                    g_date.first = selected;
+                g_date.calendar_target = 0;
+            } else if (g_date.calendar_level == 1) {
+                g_date.calendar_year += cell / 12;
+                g_date.calendar_month = cell % 12 + 1;
+                g_date.calendar_level = 0;
+            } else {
+                int decade = (g_date.calendar_year / 10) * 10;
+                int year = decade - 3 + cell;
+                if (year < 1601) year = 1601;
+                if (year > 9999) year = 9999;
+                g_date.calendar_year = year;
+                g_date.calendar_level = 1;
+            }
         }
         return;
     }
@@ -3583,14 +4008,20 @@ static void activate_date(int id) {
         selected = g_date.calendar_target == 2 ? &g_date.second : &g_date.first;
         g_date.calendar_year = selected->wYear;
         g_date.calendar_month = selected->wMonth;
-    } else if (id == EXTRA_ID_BASE + 240) {
-        if (g_date.add_amount > 1) --g_date.add_amount;
-    } else if (id == EXTRA_ID_BASE + 241) {
-        if (g_date.add_amount < 1000000) ++g_date.add_amount;
-    } else if (id == EXTRA_ID_BASE + 242) {
-        g_date.subtract = !g_date.subtract;
-    } else if (id >= EXTRA_ID_BASE + 243 && id <= EXTRA_ID_BASE + 245) {
-        g_date.add_unit = id - (EXTRA_ID_BASE + 243);
+        g_date.calendar_level = 0;
+    } else if (id == EXTRA_ID_BASE + 240 ||
+               id == EXTRA_ID_BASE + 241) {
+        g_date.subtract = id == EXTRA_ID_BASE + 241;
+    } else if (id >= EXTRA_ID_BASE + 242 && id <= EXTRA_ID_BASE + 247) {
+        int field = (id - (EXTRA_ID_BASE + 242)) / 2;
+        int increment = (id - (EXTRA_ID_BASE + 242)) % 2;
+        int *value = field == 0 ? &g_date.add_years :
+                     field == 1 ? &g_date.add_months : &g_date.add_days;
+        if (increment) {
+            if (*value < 9999) ++*value;
+        } else if (*value > 0) {
+            --*value;
+        }
     }
 }
 

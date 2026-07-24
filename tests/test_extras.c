@@ -43,6 +43,8 @@ int main(void) {
                  3.14159265358979323846, 1e-12);
     expect_true("pressure units", extras_unit_count(MODE_PRESSURE) >= 8);
     expect_true("mode name", extras_mode_name(MODE_DATE)[0] == L'D');
+    expect_true("Frankfurter currency metadata",
+                extras_currency_metadata_is_complete());
     if (failures) return 1;
     puts("extra-mode tests passed");
     return 0;
