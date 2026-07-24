@@ -1,10 +1,27 @@
 #include <windows.h>
 
 1 ICON "calculator-icon.ico"
+101 ICON "mode-icons/standard.ico"
+102 ICON "mode-icons/scientific.ico"
+103 ICON "mode-icons/programmer.ico"
+104 ICON "mode-icons/date.ico"
+105 ICON "mode-icons/currency.ico"
+106 ICON "mode-icons/volume.ico"
+107 ICON "mode-icons/length.ico"
+108 ICON "mode-icons/weight.ico"
+109 ICON "mode-icons/temperature.ico"
+110 ICON "mode-icons/energy.ico"
+111 ICON "mode-icons/area.ico"
+112 ICON "mode-icons/speed.ico"
+113 ICON "mode-icons/time.ico"
+114 ICON "mode-icons/power.ico"
+115 ICON "mode-icons/data.ico"
+116 ICON "mode-icons/pressure.ico"
+117 ICON "mode-icons/angle.ico"
 
 1 VERSIONINFO
- FILEVERSION 1,1,0,0
- PRODUCTVERSION 1,1,0,0
+ FILEVERSION 2,0,0,0
+ PRODUCTVERSION 2,0,0,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -17,11 +34,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Persistent Calculator Project\0"
       VALUE "FileDescription", "Persistent Calculator\0"
-      VALUE "FileVersion", "1.1.0\0"
+      VALUE "FileVersion", "2.0.0\0"
       VALUE "InternalName", "PersistentCalculator\0"
       VALUE "OriginalFilename", "PersistentCalculator.exe\0"
       VALUE "ProductName", "Persistent Calculator\0"
-      VALUE "ProductVersion", "1.1.0\0"
+      VALUE "ProductVersion", "2.0.0\0"
     END
   END
   BLOCK "VarFileInfo"

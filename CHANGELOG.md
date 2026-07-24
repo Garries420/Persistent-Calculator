@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.0 — 2026-07-24
+
+- Added Scientific and Programmer calculators and Date calculation.
+- Added Currency, Volume, Length, Weight and mass, Temperature, Energy, Area, Speed, Time, Power, Data, Pressure, and Angle converters.
+- Each converter now starts at zero and keeps its input separate from every other converter.
+- Currency now shows locations, currency names and symbols, plus an automatic one-unit comparison and a link to Frankfurter's currency reference.
+- Currency choices are alphabetized by location, and typing while the list is open jumps directly to matching countries, currency names, or codes.
+- Scientific now uses Windows-style Trigonometry and Function menus with working extended functions.
+- Programmer now uses clickable base rows, Bitwise and Bit shift menus, selectable word sizes, and a bit-toggling keypad.
+- Programmer values and other mode results support gray drag-selection, right-click Copy and Paste, and `Ctrl+C` or `Ctrl+V`.
+- Date calculation uses navigable month calendars for choosing exact dates.
+- Added the supplied distinct navigation icons for every calculator and converter mode.
+- Currency retrieves Frankfurter's daily blended reference rates over HTTPS and caches the raw JSON locally.
+- Currency cache policy uses a three-hour quiet period, checks on every Currency opening from 15:00–18:00 Central European time, and accepts cached Friday rates over the weekend.
+- Added dedicated History, Changelogs, and Check for updates header buttons with hover labels.
+- Reworked the hamburger menu into a scrollable mode selector.
+- Graphing remains intentionally excluded.
+
 ## 1.1.0 — 2026-07-21
 
 - Large totals now use readable three-digit spacing, such as `5 000` and `5 000 000`.

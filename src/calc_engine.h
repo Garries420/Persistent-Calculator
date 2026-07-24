@@ -43,3 +43,4 @@ void calc_memory_add(CalcState *state);
 void calc_memory_subtract(CalcState *state);
 
 #endif
+

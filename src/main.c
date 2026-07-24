@@ -23,6 +23,7 @@
 
 #include "calc_engine.h"
 #include "display_format.h"
+#include "extras.h"
 #include "updater.h"
 
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
@@ -40,14 +41,16 @@
 #define ID_MENU 301
 #define ID_CLEAR_HISTORY 401
 #define ID_HISTORY_ITEM_BASE 500
-#define ID_NAV_STANDARD 600
 #define ID_CHECK_UPDATES 601
 #define ID_NAV_CHANGELOG 602
 #define ID_MEMORY_VALUE 700
 #define ID_ACTIVE_SCROLLBAR 800
 #define ID_HISTORY_SCROLLBAR_BASE 900
 #define ID_COPY_RESULT 1000
+#define ID_PASTE_RESULT 1001
 #define ID_CHANGELOG_TAB_BASE 1100
+#define ID_NAV_MODE_BASE 1200
+#define ID_MODE_ICON_BASE 101
 #define MAX_VISIBLE_HISTORY 32
 #define CHANGELOG_MAX_RELEASES 5
 
@@ -89,6 +92,23 @@ static const GridButton g_buttons[24] = {
 
 static const wchar_t *g_memory_labels[6] = {L"MC", L"MR", L"M+", L"M−", L"MS", L"M⌄"};
 
+static const wchar_t *const g_changelog_200[] = {
+    L"Added Scientific and Programmer calculators plus Date calculation.",
+    L"Added converters for currency, volume, length, weight and mass, temperature, energy, area, speed, time, power, data, pressure, and angle.",
+    L"Each converter now starts at zero and keeps its input separate from every other converter.",
+    L"Currency now shows locations, currency names and symbols, plus an automatic one-unit comparison and a link to Frankfurter's currency reference.",
+    L"Currency choices are alphabetized by location and typing while the list is open jumps directly to matching countries, names, or currency codes.",
+    L"Scientific now uses Windows-style Trigonometry and Function menus with working extended functions.",
+    L"Programmer now uses clickable base rows, Bitwise and Bit shift menus, selectable word sizes, and a bit-toggling keypad.",
+    L"Programmer values and other mode results now support gray drag-selection, right-click Copy and Paste, and Ctrl+C or Ctrl+V.",
+    L"Date calculation now uses navigable month calendars for choosing exact dates.",
+    L"Added the supplied distinct navigation icons for every calculator and converter mode.",
+    L"Currency uses Frankfurter daily reference rates and keeps a transparent JSON cache beside calculation history in Documents.",
+    L"Currency refreshes respect a three-hour cache, the 15:00–18:00 Central European publication window, and Friday rates on weekends.",
+    L"History, Changelogs, and Check for updates now have dedicated header buttons with hover labels.",
+    L"The hamburger menu is now a scrollable mode selector. Graphing is intentionally not included."
+};
+
 static const wchar_t *const g_changelog_110[] = {
     L"Large totals now use readable three-digit spacing, such as 5 000 and 5 000 000.",
     L"The changelog keeps up to the five latest releases, with version tabs and vertical scrolling.",
@@ -111,6 +131,7 @@ static const wchar_t *const g_changelog_100[] = {
 
 /* Keep this list newest-first and retain at most the latest five releases. */
 static const ChangelogRelease g_changelog_releases[] = {
+    {L"2.0.0", L"24 July 2026", g_changelog_200, (int)_countof(g_changelog_200)},
     {L"1.1.0", L"21 July 2026", g_changelog_110, (int)_countof(g_changelog_110)},
     {L"1.0.1", L"20 July 2026", g_changelog_101, (int)_countof(g_changelog_101)},
     {L"1.0.0", L"20 July 2026", g_changelog_100, (int)_countof(g_changelog_100)}
@@ -127,6 +148,8 @@ static int g_changelog_open;
 static int g_changelog_selected;
 static int g_changelog_scroll;
 static int g_changelog_scroll_max;
+static int g_nav_scroll;
+static int g_nav_scroll_max;
 static int g_memory_popup;
 static int g_hot_id = -1;
 static int g_pressed_id = -1;
@@ -156,6 +179,7 @@ static HFONT g_font_title;
 static HFONT g_font_display;
 static HFONT g_font_display_small;
 static HFONT g_font_history_result;
+static HICON g_mode_icons[MODE_COUNT];
 
 static COLORREF CLR_BACKGROUND = RGB(32, 32, 32);
 static COLORREF COLOR_PANEL = RGB(37, 37, 37);
@@ -173,6 +197,25 @@ static COLORREF COLOR_RESULT_SELECTION = RGB(82, 82, 82);
 
 static int scale_px(int value) {
     return MulDiv(value, (int)g_dpi, 96);
+}
+
+static void load_mode_icons(HINSTANCE instance) {
+    int mode;
+    for (mode = 0; mode < MODE_COUNT; ++mode) {
+        g_mode_icons[mode] = (HICON)LoadImageW(
+            instance, MAKEINTRESOURCEW(ID_MODE_ICON_BASE + mode), IMAGE_ICON,
+            32, 32, LR_DEFAULTCOLOR);
+    }
+}
+
+static void destroy_mode_icons(void) {
+    int mode;
+    for (mode = 0; mode < MODE_COUNT; ++mode) {
+        if (g_mode_icons[mode]) {
+            DestroyIcon(g_mode_icons[mode]);
+            g_mode_icons[mode] = NULL;
+        }
+    }
 }
 
 static int load_window_placement(RECT *rect, int *maximized) {
@@ -442,8 +485,10 @@ static RECT memory_rect(int index, int width, int height) {
     return rect;
 }
 
-static RECT header_history_rect(int width) {
-    RECT rect = {width - scale_px(52), scale_px(6), width - scale_px(4), scale_px(48)};
+static RECT header_action_rect(int index, int width) {
+    int item_width = scale_px(34);
+    int right = width - scale_px(4) - item_width * (2 - index);
+    RECT rect = {right - item_width, scale_px(6), right, scale_px(48)};
     return rect;
 }
 
@@ -837,6 +882,23 @@ static void show_result_context_menu(HWND window, POINT screen_point) {
     if (command == ID_COPY_RESULT) copy_display_to_clipboard(window);
 }
 
+static void show_extra_text_context_menu(HWND window, POINT screen_point) {
+    HMENU menu = CreatePopupMenu();
+    UINT command;
+    RECT client;
+    if (!menu) return;
+    AppendMenuW(menu, MF_STRING, ID_COPY_RESULT, L"Copy");
+    AppendMenuW(menu, MF_STRING, ID_PASTE_RESULT, L"Paste");
+    command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                             screen_point.x, screen_point.y, 0, window, NULL);
+    DestroyMenu(menu);
+    GetClientRect(window, &client);
+    if (command == ID_COPY_RESULT)
+        extras_copy_text(window, client.right, client.bottom, g_dpi);
+    else if (command == ID_PASTE_RESULT)
+        extras_paste_text(window);
+}
+
 static void paste_from_clipboard(HWND window) {
     HANDLE data;
     const wchar_t *text_value;
@@ -895,6 +957,83 @@ static void draw_history_icon(HDC dc, RECT rect, COLORREF color) {
     SelectObject(dc, old_brush);
     SelectObject(dc, old_pen);
     DeleteObject(pen);
+}
+
+static void draw_download_icon(HDC dc, RECT rect, COLORREF color) {
+    int cx = (rect.left + rect.right) / 2;
+    int cy = (rect.top + rect.bottom) / 2;
+    HPEN pen = CreatePen(PS_SOLID, scale_px(1), color);
+    HGDIOBJ old = SelectObject(dc, pen);
+    MoveToEx(dc, cx, cy - scale_px(8), NULL);
+    LineTo(dc, cx, cy + scale_px(3));
+    MoveToEx(dc, cx - scale_px(5), cy - scale_px(1), NULL);
+    LineTo(dc, cx, cy + scale_px(4));
+    LineTo(dc, cx + scale_px(5), cy - scale_px(1));
+    MoveToEx(dc, cx - scale_px(8), cy + scale_px(7), NULL);
+    LineTo(dc, cx + scale_px(8), cy + scale_px(7));
+    MoveToEx(dc, cx - scale_px(8), cy + scale_px(7), NULL);
+    LineTo(dc, cx - scale_px(8), cy + scale_px(3));
+    MoveToEx(dc, cx + scale_px(8), cy + scale_px(7), NULL);
+    LineTo(dc, cx + scale_px(8), cy + scale_px(3));
+    SelectObject(dc, old);
+    DeleteObject(pen);
+}
+
+static void draw_changelog_icon(HDC dc, RECT rect, COLORREF color) {
+    int cx = (rect.left + rect.right) / 2;
+    int cy = (rect.top + rect.bottom) / 2;
+    HPEN pen = CreatePen(PS_SOLID, scale_px(1), color);
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+    Rectangle(dc, cx - scale_px(8), cy - scale_px(9),
+              cx + scale_px(8), cy + scale_px(9));
+    MoveToEx(dc, cx - scale_px(4), cy - scale_px(4), NULL);
+    LineTo(dc, cx + scale_px(5), cy - scale_px(4));
+    MoveToEx(dc, cx - scale_px(4), cy, NULL);
+    LineTo(dc, cx + scale_px(5), cy);
+    MoveToEx(dc, cx - scale_px(4), cy + scale_px(4), NULL);
+    LineTo(dc, cx + scale_px(5), cy + scale_px(4));
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
+}
+
+static void draw_header_tooltip(HDC dc, int width) {
+    const wchar_t *label = NULL;
+    RECT anchor;
+    RECT tooltip;
+    SIZE size = {0, 0};
+    HGDIOBJ old_font;
+    if (g_hot_id == ID_CHECK_UPDATES) {
+        label = L"Check for updates";
+        anchor = header_action_rect(0, width);
+    } else if (g_hot_id == ID_NAV_CHANGELOG) {
+        label = L"Changelogs";
+        anchor = header_action_rect(1, width);
+    } else if (g_hot_id == ID_HISTORY) {
+        label = L"History";
+        anchor = header_action_rect(2, width);
+    } else {
+        return;
+    }
+    old_font = SelectObject(dc, g_font_small);
+    GetTextExtentPoint32W(dc, label, (int)wcslen(label), &size);
+    SelectObject(dc, old_font);
+    tooltip.left = (anchor.left + anchor.right - size.cx - scale_px(16)) / 2;
+    tooltip.right = tooltip.left + size.cx + scale_px(16);
+    if (tooltip.left < scale_px(4)) {
+        tooltip.right += scale_px(4) - tooltip.left;
+        tooltip.left = scale_px(4);
+    }
+    if (tooltip.right > width - scale_px(4)) {
+        tooltip.left -= tooltip.right - (width - scale_px(4));
+        tooltip.right = width - scale_px(4);
+    }
+    tooltip.top = scale_px(48);
+    tooltip.bottom = scale_px(73);
+    rounded_rect(dc, &tooltip, RGB(55, 55, 55), scale_px(4));
+    draw_text_color(dc, label, tooltip, g_font_small, COLOR_TEXT,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 static void draw_trash_icon(HDC dc, RECT rect, COLORREF color) {
@@ -1115,37 +1254,289 @@ static void draw_history_panel(HDC dc, int width, int height) {
     }
 }
 
+static void draw_nav_mode_icon(HDC dc, ExtraMode mode, RECT row, COLORREF color) {
+    RECT icon = {row.left + scale_px(11), row.top + scale_px(10),
+                 row.left + scale_px(29), row.bottom - scale_px(10)};
+    int cx = (icon.left + icon.right) / 2;
+    int cy = (icon.top + icon.bottom) / 2;
+    if (mode >= MODE_STANDARD && mode < MODE_COUNT && g_mode_icons[mode]) {
+        DrawIconEx(dc, icon.left, icon.top, g_mode_icons[mode],
+                   icon.right - icon.left, icon.bottom - icon.top,
+                   0, NULL, DI_NORMAL);
+        return;
+    }
+    HPEN pen = CreatePen(PS_SOLID, scale_px(1), color);
+    HGDIOBJ old_pen = SelectObject(dc, pen);
+    HGDIOBJ old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+    switch (mode) {
+        case MODE_STANDARD:
+            Rectangle(dc, icon.left + scale_px(2), icon.top,
+                      icon.right - scale_px(2), icon.bottom);
+            MoveToEx(dc, icon.left + scale_px(5), icon.top + scale_px(5), NULL);
+            LineTo(dc, icon.right - scale_px(5), icon.top + scale_px(5));
+            MoveToEx(dc, cx, icon.top + scale_px(8), NULL);
+            LineTo(dc, cx, icon.bottom - scale_px(2));
+            MoveToEx(dc, icon.left + scale_px(4), cy + scale_px(2), NULL);
+            LineTo(dc, icon.right - scale_px(4), cy + scale_px(2));
+            break;
+        case MODE_SCIENTIFIC:
+            MoveToEx(dc, cx - scale_px(3), icon.top, NULL);
+            LineTo(dc, cx + scale_px(3), icon.top);
+            MoveToEx(dc, cx - scale_px(1), icon.top, NULL);
+            LineTo(dc, cx - scale_px(1), cy - scale_px(1));
+            LineTo(dc, icon.left + scale_px(2), icon.bottom);
+            LineTo(dc, icon.right - scale_px(2), icon.bottom);
+            LineTo(dc, cx + scale_px(1), cy - scale_px(1));
+            LineTo(dc, cx + scale_px(1), icon.top);
+            MoveToEx(dc, icon.left + scale_px(5), cy + scale_px(3), NULL);
+            LineTo(dc, icon.right - scale_px(5), cy + scale_px(3));
+            break;
+        case MODE_PROGRAMMER:
+            MoveToEx(dc, cx - scale_px(2), icon.top + scale_px(2), NULL);
+            LineTo(dc, icon.left + scale_px(2), cy);
+            LineTo(dc, cx - scale_px(2), icon.bottom - scale_px(2));
+            MoveToEx(dc, cx + scale_px(2), icon.top + scale_px(2), NULL);
+            LineTo(dc, icon.right - scale_px(2), cy);
+            LineTo(dc, cx + scale_px(2), icon.bottom - scale_px(2));
+            MoveToEx(dc, cx + scale_px(1), icon.top, NULL);
+            LineTo(dc, cx - scale_px(1), icon.bottom);
+            break;
+        case MODE_DATE:
+            Rectangle(dc, icon.left + scale_px(1), icon.top + scale_px(3),
+                      icon.right - scale_px(1), icon.bottom);
+            MoveToEx(dc, icon.left + scale_px(1), icon.top + scale_px(7), NULL);
+            LineTo(dc, icon.right - scale_px(1), icon.top + scale_px(7));
+            MoveToEx(dc, icon.left + scale_px(5), icon.top, NULL);
+            LineTo(dc, icon.left + scale_px(5), icon.top + scale_px(5));
+            MoveToEx(dc, icon.right - scale_px(5), icon.top, NULL);
+            LineTo(dc, icon.right - scale_px(5), icon.top + scale_px(5));
+            break;
+        case MODE_CURRENCY: {
+            RECT symbol = icon;
+            symbol.left -= scale_px(2);
+            symbol.right += scale_px(2);
+            draw_text_color(dc, L"$  €", symbol, g_font_small, color,
+                            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            break;
+        }
+        case MODE_VOLUME:
+            MoveToEx(dc, cx, icon.top, NULL);
+            LineTo(dc, icon.right - scale_px(1), icon.top + scale_px(4));
+            LineTo(dc, icon.right - scale_px(1), icon.bottom - scale_px(4));
+            LineTo(dc, cx, icon.bottom);
+            LineTo(dc, icon.left + scale_px(1), icon.bottom - scale_px(4));
+            LineTo(dc, icon.left + scale_px(1), icon.top + scale_px(4));
+            LineTo(dc, cx, icon.top);
+            MoveToEx(dc, icon.left + scale_px(1), icon.top + scale_px(4), NULL);
+            LineTo(dc, cx, cy);
+            LineTo(dc, icon.right - scale_px(1), icon.top + scale_px(4));
+            MoveToEx(dc, cx, cy, NULL);
+            LineTo(dc, cx, icon.bottom);
+            break;
+        case MODE_LENGTH:
+            Rectangle(dc, icon.left + scale_px(4), icon.top,
+                      icon.right - scale_px(4), icon.bottom);
+            MoveToEx(dc, cx, icon.top + scale_px(2), NULL);
+            LineTo(dc, icon.right - scale_px(4), icon.top + scale_px(2));
+            MoveToEx(dc, cx - scale_px(2), icon.top + scale_px(6), NULL);
+            LineTo(dc, icon.right - scale_px(4), icon.top + scale_px(6));
+            MoveToEx(dc, cx, icon.top + scale_px(10), NULL);
+            LineTo(dc, icon.right - scale_px(4), icon.top + scale_px(10));
+            break;
+        case MODE_WEIGHT:
+            Arc(dc, icon.left + scale_px(4), icon.top,
+                icon.right - scale_px(4), icon.top + scale_px(10),
+                icon.left + scale_px(5), cy, icon.right - scale_px(5), cy);
+            MoveToEx(dc, icon.left + scale_px(4), icon.top + scale_px(5), NULL);
+            LineTo(dc, icon.left + scale_px(1), icon.bottom);
+            LineTo(dc, icon.right - scale_px(1), icon.bottom);
+            LineTo(dc, icon.right - scale_px(4), icon.top + scale_px(5));
+            break;
+        case MODE_TEMPERATURE:
+            Ellipse(dc, cx - scale_px(4), icon.bottom - scale_px(8),
+                    cx + scale_px(4), icon.bottom);
+            MoveToEx(dc, cx - scale_px(2), icon.bottom - scale_px(7), NULL);
+            LineTo(dc, cx - scale_px(2), icon.top + scale_px(2));
+            Arc(dc, cx - scale_px(2), icon.top, cx + scale_px(4),
+                icon.top + scale_px(6), cx, icon.top, cx + scale_px(3), cy);
+            MoveToEx(dc, cx + scale_px(2), icon.top + scale_px(3), NULL);
+            LineTo(dc, cx + scale_px(2), icon.bottom - scale_px(7));
+            break;
+        case MODE_ENERGY:
+            MoveToEx(dc, cx + scale_px(2), icon.top, NULL);
+            LineTo(dc, icon.left + scale_px(3), cy + scale_px(1));
+            LineTo(dc, cx, cy + scale_px(1));
+            LineTo(dc, cx - scale_px(2), icon.bottom);
+            LineTo(dc, icon.right - scale_px(3), cy - scale_px(2));
+            LineTo(dc, cx + scale_px(1), cy - scale_px(2));
+            LineTo(dc, cx + scale_px(2), icon.top);
+            break;
+        case MODE_AREA:
+            for (int line = 0; line < 3; ++line) {
+                int offset = line * scale_px(6);
+                MoveToEx(dc, icon.left + offset, icon.top, NULL);
+                LineTo(dc, icon.left + offset, icon.bottom);
+                MoveToEx(dc, icon.left, icon.top + offset, NULL);
+                LineTo(dc, icon.right, icon.top + offset);
+            }
+            break;
+        case MODE_SPEED:
+            Ellipse(dc, cx - scale_px(2), icon.top, cx + scale_px(2),
+                    icon.top + scale_px(4));
+            MoveToEx(dc, cx, icon.top + scale_px(4), NULL);
+            LineTo(dc, cx - scale_px(2), cy + scale_px(1));
+            LineTo(dc, icon.left, cy + scale_px(5));
+            MoveToEx(dc, cx - scale_px(1), cy - scale_px(1), NULL);
+            LineTo(dc, icon.right, cy);
+            MoveToEx(dc, cx - scale_px(2), cy + scale_px(1), NULL);
+            LineTo(dc, cx + scale_px(3), icon.bottom);
+            break;
+        case MODE_TIME:
+            Ellipse(dc, icon.left, icon.top, icon.right, icon.bottom);
+            MoveToEx(dc, cx, icon.top + scale_px(3), NULL);
+            LineTo(dc, cx, cy);
+            LineTo(dc, icon.right - scale_px(3), cy);
+            break;
+        case MODE_POWER:
+            MoveToEx(dc, cx + scale_px(2), icon.top, NULL);
+            LineTo(dc, icon.left + scale_px(3), cy + scale_px(1));
+            LineTo(dc, cx, cy + scale_px(1));
+            LineTo(dc, cx - scale_px(2), icon.bottom);
+            LineTo(dc, icon.right - scale_px(3), cy - scale_px(2));
+            LineTo(dc, cx + scale_px(1), cy - scale_px(2));
+            break;
+        case MODE_DATA:
+            Rectangle(dc, icon.left + scale_px(2), icon.top,
+                      icon.right - scale_px(2), icon.bottom);
+            Ellipse(dc, cx - scale_px(3), icon.top + scale_px(3),
+                    cx + scale_px(3), icon.top + scale_px(9));
+            MoveToEx(dc, icon.left + scale_px(5), icon.bottom - scale_px(3), NULL);
+            LineTo(dc, icon.right - scale_px(5), icon.bottom - scale_px(3));
+            break;
+        case MODE_PRESSURE:
+            Arc(dc, icon.left, icon.top + scale_px(2), icon.right,
+                icon.bottom + scale_px(4), icon.left, cy, icon.right, cy);
+            MoveToEx(dc, cx, cy + scale_px(2), NULL);
+            LineTo(dc, icon.right - scale_px(4), icon.top + scale_px(5));
+            MoveToEx(dc, icon.left + scale_px(2), icon.bottom, NULL);
+            LineTo(dc, icon.right - scale_px(2), icon.bottom);
+            break;
+        case MODE_ANGLE:
+            MoveToEx(dc, icon.left, icon.bottom, NULL);
+            LineTo(dc, icon.right, icon.bottom);
+            LineTo(dc, icon.right - scale_px(3), icon.top);
+            LineTo(dc, icon.left, icon.bottom);
+            Arc(dc, icon.left + scale_px(2), icon.bottom - scale_px(8),
+                icon.left + scale_px(10), icon.bottom,
+                icon.left + scale_px(4), icon.bottom,
+                icon.left + scale_px(8), icon.bottom - scale_px(6));
+            break;
+        default:
+            Ellipse(dc, icon.left, icon.top, icon.right, icon.bottom);
+            break;
+    }
+    SelectObject(dc, old_brush);
+    SelectObject(dc, old_pen);
+    DeleteObject(pen);
+}
+
+static RECT nav_mode_rect(int mode, int panel_right) {
+    int y;
+    if (mode <= MODE_DATE)
+        y = scale_px(102) + mode * scale_px(43) - g_nav_scroll;
+    else
+        y = scale_px(102) + 4 * scale_px(43) + scale_px(34) +
+            (mode - MODE_CURRENCY) * scale_px(43) - g_nav_scroll;
+    {
+        RECT rect = {scale_px(6), y, panel_right - scale_px(8), y + scale_px(39)};
+        return rect;
+    }
+}
+
 static void draw_nav_panel(HDC dc, int width, int height) {
-    int panel_width = scale_px(246);
+    int panel_width = scale_px(270);
+    int content_height = scale_px(102) + 4 * scale_px(43) + scale_px(34) +
+                         (MODE_COUNT - MODE_CURRENCY) * scale_px(43) + scale_px(20);
+    int viewport_height = height - scale_px(50);
+    int mode;
+    int saved_dc;
     RECT panel = {0, scale_px(50), panel_width < width ? panel_width : width, height};
-    RECT caption = {scale_px(18), scale_px(62), panel.right - scale_px(10), scale_px(102)};
-    RECT standard = {scale_px(6), scale_px(110), panel.right - scale_px(6), scale_px(158)};
-    RECT changelog = {scale_px(6), scale_px(166), panel.right - scale_px(6), scale_px(214)};
-    RECT updates = {scale_px(6), scale_px(222), panel.right - scale_px(6), scale_px(270)};
-    RECT version = {scale_px(18), scale_px(272), panel.right - scale_px(12), scale_px(308)};
-    COLORREF standard_fill = g_changelog_open ? COLOR_BUTTON : COLOR_PRESSED;
-    COLORREF changelog_fill = g_changelog_open ? COLOR_PRESSED : COLOR_BUTTON;
+    RECT caption = {scale_px(18), scale_px(56), panel.right - scale_px(10), scale_px(96)};
+    RECT converter_heading;
+    g_nav_scroll_max = content_height > viewport_height
+                           ? content_height - viewport_height : 0;
+    if (g_nav_scroll < 0) g_nav_scroll = 0;
+    if (g_nav_scroll > g_nav_scroll_max) g_nav_scroll = g_nav_scroll_max;
     fill_rect_color(dc, &panel, RGB(37, 42, 43));
+    saved_dc = SaveDC(dc);
+    IntersectClipRect(dc, panel.left, panel.top, panel.right, panel.bottom);
+    caption.top -= g_nav_scroll;
+    caption.bottom -= g_nav_scroll;
     draw_text_color(dc, L"Calculator", caption, g_font_title, COLOR_TEXT,
                     DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    if (g_hot_id == ID_NAV_STANDARD) standard_fill = COLOR_HOVER;
-    rounded_rect(dc, &standard, standard_fill, scale_px(4));
-    standard.left += scale_px(14);
-    draw_text_color(dc, L"▣   Standard", standard, g_font_normal, COLOR_TEXT,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    if (g_hot_id == ID_NAV_CHANGELOG) changelog_fill = COLOR_HOVER;
-    rounded_rect(dc, &changelog, changelog_fill, scale_px(4));
-    changelog.left += scale_px(14);
-    draw_text_color(dc, L"▤   Changelog", changelog, g_font_normal, COLOR_TEXT,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    rounded_rect(dc, &updates, g_hot_id == ID_CHECK_UPDATES ? COLOR_HOVER : COLOR_BUTTON,
-                 scale_px(4));
-    updates.left += scale_px(14);
-    draw_text_color(dc, L"↻   Check for updates", updates, g_font_normal, COLOR_TEXT,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    draw_text_color(dc, L"Version " PERSISTENT_CALCULATOR_VERSION_W, version,
-                    g_font_small, COLOR_MUTED,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    for (mode = MODE_STANDARD; mode <= MODE_DATE; ++mode) {
+        RECT rect = nav_mode_rect(mode, panel.right);
+        RECT label = rect;
+        COLORREF fill = (!g_changelog_open && extras_mode() == (ExtraMode)mode)
+                            ? COLOR_PRESSED : COLOR_BUTTON;
+        if (g_hot_id == ID_NAV_MODE_BASE + mode) fill = COLOR_HOVER;
+        rounded_rect(dc, &rect, fill, scale_px(4));
+        if (!g_changelog_open && extras_mode() == (ExtraMode)mode) {
+            RECT marker = {rect.left, rect.top + scale_px(7),
+                           rect.left + scale_px(3), rect.bottom - scale_px(7)};
+            rounded_rect(dc, &marker, RGB(156, 198, 217), scale_px(2));
+        }
+        draw_nav_mode_icon(dc, (ExtraMode)mode, rect, COLOR_TEXT);
+        label.left += scale_px(44);
+        draw_text_color(dc, extras_mode_name((ExtraMode)mode), label,
+                        g_font_normal, COLOR_TEXT,
+                        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+    converter_heading.left = scale_px(18);
+    converter_heading.right = panel.right - scale_px(10);
+    converter_heading.top = scale_px(102) + 4 * scale_px(43) - g_nav_scroll;
+    converter_heading.bottom = converter_heading.top + scale_px(30);
+    draw_text_color(dc, L"Converter", converter_heading, g_font_normal,
+                    COLOR_MUTED, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    for (mode = MODE_CURRENCY; mode < MODE_COUNT; ++mode) {
+        RECT rect = nav_mode_rect(mode, panel.right);
+        RECT label = rect;
+        COLORREF fill = (!g_changelog_open && extras_mode() == (ExtraMode)mode)
+                            ? COLOR_PRESSED : COLOR_BUTTON;
+        if (g_hot_id == ID_NAV_MODE_BASE + mode) fill = COLOR_HOVER;
+        rounded_rect(dc, &rect, fill, scale_px(4));
+        if (!g_changelog_open && extras_mode() == (ExtraMode)mode) {
+            RECT marker = {rect.left, rect.top + scale_px(7),
+                           rect.left + scale_px(3), rect.bottom - scale_px(7)};
+            rounded_rect(dc, &marker, RGB(156, 198, 217), scale_px(2));
+        }
+        draw_nav_mode_icon(dc, (ExtraMode)mode, rect, COLOR_TEXT);
+        label.left += scale_px(44);
+        draw_text_color(dc, extras_mode_name((ExtraMode)mode), label,
+                        g_font_normal, COLOR_TEXT,
+                        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+    RestoreDC(dc, saved_dc);
+    if (g_nav_scroll_max > 0) {
+        int track_top = scale_px(56);
+        int track_bottom = height - scale_px(8);
+        int track_height = track_bottom - track_top;
+        int thumb_height = (viewport_height * track_height) / content_height;
+        int travel;
+        int thumb_top;
+        RECT track = {panel.right - scale_px(6), track_top,
+                      panel.right - scale_px(3), track_bottom};
+        RECT thumb;
+        if (thumb_height < scale_px(35)) thumb_height = scale_px(35);
+        travel = track_height - thumb_height;
+        thumb_top = track_top + (g_nav_scroll * travel) / g_nav_scroll_max;
+        thumb.left = track.left;
+        thumb.right = track.right;
+        thumb.top = thumb_top;
+        thumb.bottom = thumb_top + thumb_height;
+        rounded_rect(dc, &track, RGB(55, 55, 55), scale_px(2));
+        rounded_rect(dc, &thumb, RGB(145, 149, 150), scale_px(2));
+    }
 }
 
 static int changelog_release_count(void) {
@@ -1285,19 +1676,24 @@ static void paint_window(HWND window, HDC target_dc) {
     draw_hamburger(dc, header_menu_rect(), g_hot_id == ID_MENU ? COLOR_TEXT : COLOR_MUTED);
     title.left = scale_px(47);
     title.top = scale_px(5);
-    title.right = width - scale_px(54);
+    title.right = width - scale_px(110);
     title.bottom = scale_px(49);
-    draw_text_color(dc, g_changelog_open ? L"Changelog" : L"Standard",
+    draw_text_color(dc, g_changelog_open ? L"Changelog" : extras_mode_name(extras_mode()),
                     title, g_font_title, COLOR_TEXT,
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    if (!g_changelog_open)
-        draw_history_icon(dc, header_history_rect(width),
-                          g_hot_id == ID_HISTORY ? COLOR_TEXT : COLOR_MUTED);
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    draw_download_icon(dc, header_action_rect(0, width),
+                       g_hot_id == ID_CHECK_UPDATES ? COLOR_TEXT : COLOR_MUTED);
+    draw_changelog_icon(dc, header_action_rect(1, width),
+                        (g_hot_id == ID_NAV_CHANGELOG || g_changelog_open)
+                            ? COLOR_TEXT : COLOR_MUTED);
+    draw_history_icon(dc, header_action_rect(2, width),
+                      (g_hot_id == ID_HISTORY || g_history_open)
+                          ? COLOR_TEXT : COLOR_MUTED);
 
     if (g_changelog_open) {
         g_active_scroll_max = 0;
         draw_changelog_panel(dc, width, height);
-    } else {
+    } else if (extras_mode() == MODE_STANDARD) {
         expression_rect.left = scale_px(14);
         expression_rect.right = width - scale_px(13);
         expression_rect.top = scale_px(51);
@@ -1323,9 +1719,13 @@ static void paint_window(HWND window, HDC target_dc) {
         draw_memory_row(dc, width, height);
         for (index = 0; index < 24; ++index) draw_grid_button(dc, index, width, height);
         if (g_memory_popup) draw_memory_popup(dc, width, height);
-        if (g_history_open) draw_history_panel(dc, width, height);
+    } else {
+        g_active_scroll_max = 0;
+        extras_paint(dc, width, height, g_dpi, g_hot_id, g_pressed_id);
     }
+    if (g_history_open) draw_history_panel(dc, width, height);
     if (g_nav_open) draw_nav_panel(dc, width, height);
+    if (!g_nav_open) draw_header_tooltip(dc, width);
 
     BitBlt(target_dc, 0, 0, width, height, dc, 0, 0, SRCCOPY);
     SelectObject(dc, old_bitmap);
@@ -1339,7 +1739,8 @@ static int point_in_rect(RECT rect, int x, int y) {
 }
 
 static int result_selection_available(void) {
-    return !g_history_open && !g_nav_open && !g_changelog_open;
+    return extras_mode() == MODE_STANDARD &&
+           !g_history_open && !g_nav_open && !g_changelog_open;
 }
 
 static int result_character_from_x(HWND window, int mouse_x) {
@@ -1473,17 +1874,17 @@ static int hit_test(HWND window, int x, int y) {
     width = client.right;
     height = client.bottom;
     if (point_in_rect(header_menu_rect(), x, y)) return ID_MENU;
-    if (!g_changelog_open && point_in_rect(header_history_rect(width), x, y)) return ID_HISTORY;
+    if (point_in_rect(header_action_rect(0, width), x, y)) return ID_CHECK_UPDATES;
+    if (point_in_rect(header_action_rect(1, width), x, y)) return ID_NAV_CHANGELOG;
+    if (point_in_rect(header_action_rect(2, width), x, y)) return ID_HISTORY;
     if (g_nav_open) {
-        RECT standard = {scale_px(6), scale_px(110),
-                         (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(158)};
-        RECT changelog = {scale_px(6), scale_px(166),
-                          (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(214)};
-        RECT updates = {scale_px(6), scale_px(222),
-                        (scale_px(246) < width ? scale_px(246) : width) - scale_px(6), scale_px(270)};
-        if (point_in_rect(standard, x, y)) return ID_NAV_STANDARD;
-        if (point_in_rect(changelog, x, y)) return ID_NAV_CHANGELOG;
-        if (point_in_rect(updates, x, y)) return ID_CHECK_UPDATES;
+        int panel_right = scale_px(270) < width ? scale_px(270) : width;
+        for (index = MODE_STANDARD; index < MODE_COUNT; ++index) {
+            RECT rect = nav_mode_rect(index, panel_right);
+            if (rect.bottom >= scale_px(50) && rect.top <= height &&
+                point_in_rect(rect, x, y))
+                return ID_NAV_MODE_BASE + index;
+        }
         return -1;
     }
     if (g_changelog_open) {
@@ -1505,6 +1906,8 @@ static int hit_test(HWND window, int x, int y) {
         }
         return -1;
     }
+    if (extras_mode() != MODE_STANDARD)
+        return extras_hit_test(x, y, width, height, g_dpi);
     if (g_active_scroll_max > 0 && point_in_rect(g_active_scroll_track, x, y))
         return ID_ACTIVE_SCROLLBAR;
     if (g_memory_popup) {
@@ -1534,6 +1937,7 @@ static void recall_history_row(int row) {
     pretty_number_to_ascii(g_history[index].result, ascii, sizeof(ascii));
     value = strtod(ascii, &end);
     if (end != ascii && *end == '\0' && isfinite(value)) {
+        extras_set_mode(NULL, MODE_STANDARD);
         pretty_expression_to_ascii(g_history[index].expression, expression_ascii,
                                    sizeof(expression_ascii));
         calc_restore_history(&g_calc, value, expression_ascii);
@@ -1604,8 +2008,21 @@ static void activate_grid_button(int index) {
     }
 }
 
+static void record_extra_history_if_available(void) {
+    wchar_t expression[256];
+    wchar_t result[160];
+    if (extras_take_history(expression, _countof(expression),
+                            result, _countof(result))) {
+        add_history(expression, result);
+        save_history();
+    }
+}
+
 static void activate_id(HWND window, int id) {
-    if (id >= ID_GRID_BASE && id < ID_GRID_BASE + 24) {
+    if (id >= EXTRA_ID_BASE) {
+        extras_activate(window, id);
+        record_extra_history_if_available();
+    } else if (id >= ID_GRID_BASE && id < ID_GRID_BASE + 24) {
         activate_grid_button(id - ID_GRID_BASE);
     } else if (id >= ID_MEMORY_BASE && id < ID_MEMORY_BASE + 6) {
         switch (id - ID_MEMORY_BASE) {
@@ -1620,22 +2037,24 @@ static void activate_id(HWND window, int id) {
             case 5: g_memory_popup = !g_memory_popup; break;
         }
     } else if (id == ID_HISTORY) {
-        if (g_changelog_open) return;
         g_history_open = !g_history_open;
+        g_changelog_open = 0;
         g_nav_open = 0;
         g_memory_popup = 0;
     } else if (id == ID_MENU) {
         g_nav_open = !g_nav_open;
         g_history_open = 0;
         g_memory_popup = 0;
-    } else if (id == ID_NAV_STANDARD) {
+    } else if (id >= ID_NAV_MODE_BASE && id < ID_NAV_MODE_BASE + MODE_COUNT) {
+        ExtraMode mode = (ExtraMode)(id - ID_NAV_MODE_BASE);
+        extras_set_mode(window, mode);
         g_changelog_open = 0;
         g_history_open = 0;
         g_memory_popup = 0;
         g_nav_open = 0;
     } else if (id == ID_NAV_CHANGELOG) {
         clear_result_selection();
-        g_changelog_open = 1;
+        g_changelog_open = !g_changelog_open;
         g_changelog_selected = 0;
         g_changelog_scroll = 0;
         g_history_open = 0;
@@ -1647,6 +2066,7 @@ static void activate_id(HWND window, int id) {
         g_changelog_scroll = 0;
     } else if (id == ID_CHECK_UPDATES) {
         g_nav_open = 0;
+        g_history_open = 0;
         updater_check_now(window);
     } else if (id == ID_CLEAR_HISTORY) {
         g_history_count = 0;
@@ -1663,6 +2083,11 @@ static void activate_id(HWND window, int id) {
 }
 
 static void keyboard_character(HWND window, wchar_t character) {
+    if (extras_mode() != MODE_STANDARD) {
+        extras_character(window, character);
+        record_extra_history_if_available();
+        return;
+    }
     if (character >= L'0' && character <= L'9') {
         if (g_calc.continuation_available) g_calculation_history_index = -1;
         calc_digit(&g_calc, (int)(character - L'0'));
@@ -1730,6 +2155,11 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             return 0;
         }
         case WM_SETCURSOR: {
+            if (LOWORD(lparam) == HTCLIENT &&
+                g_hot_id == EXTRA_ID_CURRENCY_SOURCE) {
+                SetCursor(LoadCursorW(NULL, IDC_HAND));
+                return TRUE;
+            }
             if (LOWORD(lparam) == HTCLIENT && result_selection_available()) {
                 POINT point;
                 RECT client;
@@ -1743,9 +2173,30 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
                     return TRUE;
                 }
             }
+            if (LOWORD(lparam) == HTCLIENT &&
+                extras_mode() != MODE_STANDARD &&
+                !g_nav_open && !g_history_open && !g_changelog_open) {
+                POINT point;
+                RECT client;
+                GetCursorPos(&point);
+                ScreenToClient(window, &point);
+                GetClientRect(window, &client);
+                if (extras_text_hit_test(point.x, point.y, client.right,
+                                         client.bottom, g_dpi)) {
+                    SetCursor(LoadCursorW(NULL, IDC_IBEAM));
+                    return TRUE;
+                }
+            }
             return DefWindowProcW(window, message, wparam, lparam);
         }
         case WM_MOUSEMOVE: {
+            if (extras_text_selection_dragging()) {
+                RECT client;
+                GetClientRect(window, &client);
+                extras_update_text_selection(window, GET_X_LPARAM(lparam),
+                                             client.right, client.bottom, g_dpi);
+                return 0;
+            }
             if (g_result_selecting) {
                 update_result_selection(window, GET_X_LPARAM(lparam));
                 return 0;
@@ -1774,6 +2225,16 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             int mouse_y = GET_Y_LPARAM(lparam);
             GetClientRect(window, &client);
             display = result_display_rect(client.right, client.bottom);
+            if (extras_mode() != MODE_STANDARD &&
+                !g_nav_open && !g_history_open && !g_changelog_open &&
+                extras_text_hit_test(mouse_x, mouse_y, client.right,
+                                     client.bottom, g_dpi)) {
+                extras_begin_text_selection(window, mouse_x, mouse_y,
+                                            client.right, client.bottom, g_dpi);
+                g_pressed_id = -1;
+                SetCapture(window);
+                return 0;
+            }
             if (result_selection_available() && point_in_rect(display, mouse_x, mouse_y)) {
                 begin_result_selection(window, mouse_x);
                 return 0;
@@ -1791,6 +2252,15 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             return 0;
         }
         case WM_LBUTTONUP: {
+            if (extras_text_selection_dragging()) {
+                RECT client;
+                GetClientRect(window, &client);
+                extras_update_text_selection(window, GET_X_LPARAM(lparam),
+                                             client.right, client.bottom, g_dpi);
+                extras_end_text_selection(window);
+                ReleaseCapture();
+                return 0;
+            }
             if (g_result_selecting) {
                 update_result_selection(window, GET_X_LPARAM(lparam));
                 g_result_selecting = 0;
@@ -1818,6 +2288,25 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             POINT client_point = screen_point;
             RECT client;
             RECT display;
+            if (extras_mode() != MODE_STANDARD &&
+                !g_nav_open && !g_history_open && !g_changelog_open) {
+                GetClientRect(window, &client);
+                if (screen_point.x == -1 && screen_point.y == -1) {
+                    client_point.x = client.right / 2;
+                    client_point.y = scale_px(100);
+                    screen_point = client_point;
+                    ClientToScreen(window, &screen_point);
+                } else {
+                    ScreenToClient(window, &client_point);
+                }
+                if (!extras_text_hit_test(client_point.x, client_point.y,
+                                          client.right, client.bottom, g_dpi))
+                    return DefWindowProcW(window, message, wparam, lparam);
+                extras_focus_text_at(window, client_point.x, client_point.y,
+                                     client.right, client.bottom, g_dpi);
+                show_extra_text_context_menu(window, screen_point);
+                return 0;
+            }
             if (!result_selection_available())
                 return DefWindowProcW(window, message, wparam, lparam);
             GetClientRect(window, &client);
@@ -1840,7 +2329,12 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             int wheel_steps = GET_WHEEL_DELTA_WPARAM(wparam) / WHEEL_DELTA;
             ScreenToClient(window, &point);
             if (updater_is_modal()) return 0;
-            if (g_changelog_open && !g_nav_open) {
+            if (g_nav_open) {
+                g_nav_scroll -= wheel_steps * scale_px(58);
+                if (g_nav_scroll < 0) g_nav_scroll = 0;
+                if (g_nav_scroll > g_nav_scroll_max) g_nav_scroll = g_nav_scroll_max;
+                InvalidateRect(window, NULL, FALSE);
+            } else if (g_changelog_open) {
                 g_changelog_scroll -= wheel_steps * scale_px(54);
                 if (g_changelog_scroll < 0) g_changelog_scroll = 0;
                 if (g_changelog_scroll > g_changelog_scroll_max)
@@ -1855,6 +2349,8 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
                 if (wheel_steps < 0 && g_history_scroll < maximum) ++g_history_scroll;
                 if (wheel_steps > 0 && g_history_scroll > 0) --g_history_scroll;
                 InvalidateRect(window, NULL, FALSE);
+            } else if (extras_mode() != MODE_STANDARD) {
+                extras_mouse_wheel(window, wheel_steps);
             } else if (!g_nav_open && g_active_scroll_max > 0) {
                 RECT active_zone = g_active_scroll_track;
                 active_zone.top = scale_px(50);
@@ -1889,8 +2385,19 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             }
             if (control) {
                 switch (wparam) {
-                    case 'C': copy_display_to_clipboard(window); return 0;
-                    case 'V': paste_from_clipboard(window); InvalidateRect(window, NULL, FALSE); return 0;
+                    case 'C':
+                        if (extras_mode() == MODE_STANDARD) copy_display_to_clipboard(window);
+                        else {
+                            RECT client;
+                            GetClientRect(window, &client);
+                            extras_copy_text(window, client.right, client.bottom, g_dpi);
+                        }
+                        return 0;
+                    case 'V':
+                        if (extras_mode() == MODE_STANDARD) paste_from_clipboard(window);
+                        else extras_paste_text(window);
+                        InvalidateRect(window, NULL, FALSE);
+                        return 0;
                     case 'H': activate_id(window, ID_HISTORY); return 0;
                     case 'L': calc_memory_clear(&g_calc); break;
                     case 'R': calc_memory_recall(&g_calc); break;
@@ -1900,6 +2407,11 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
                     default: break;
                 }
                 InvalidateRect(window, NULL, FALSE);
+                return 0;
+            }
+            if (extras_mode() != MODE_STANDARD) {
+                extras_key_down(window, wparam);
+                record_extra_history_if_available();
                 return 0;
             }
             switch (wparam) {
@@ -1932,6 +2444,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             if (wparam != VK_RETURN && wparam != VK_BACK && wparam != VK_ESCAPE)
                 keyboard_character(window, (wchar_t)wparam);
             return 0;
+        case EXTRA_CURRENCY_READY:
+            extras_currency_ready(window, lparam);
+            return 0;
         case WM_CLOSE:
             save_window_placement(window);
             DestroyWindow(window);
@@ -1941,8 +2456,10 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             return 0;
         case WM_DESTROY:
             save_history();
+            extras_shutdown();
             updater_shutdown();
             destroy_fonts();
+            destroy_mode_icons();
             PostQuitMessage(0);
             return 0;
     }
@@ -1969,6 +2486,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, wchar_t *command_lin
     if (updater_apply_if_requested()) return 0;
 
     SetProcessDPIAware();
+    load_mode_icons(instance);
     calc_init(&g_calc);
     build_history_path();
     load_history_file(g_history_path);
@@ -2009,6 +2527,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, wchar_t *command_lin
                              window_x, window_y, window_width, window_height,
                              NULL, NULL, instance, NULL);
     if (!window) return 2;
+    extras_initialize(window);
     ShowWindow(window, saved_maximized ? SW_SHOWMAXIMIZED : show);
     UpdateWindow(window);
     updater_initialize(window);

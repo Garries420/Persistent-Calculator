@@ -57,3 +57,4 @@ int main(void) {
     puts("All updater parser tests passed.");
     return 0;
 }
+

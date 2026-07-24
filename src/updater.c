@@ -1038,3 +1038,4 @@ int updater_apply_if_requested(void) {
     LocalFree(arguments);
     return 1;
 }
+

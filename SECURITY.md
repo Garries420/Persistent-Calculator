@@ -22,6 +22,10 @@ The updater accepts only stable releases returned by GitHub's `releases/latest` 
 
 The updater fails closed: a missing digest, malformed response, wrong domain/repository path, download error, or hash mismatch cancels installation.
 
+## Currency-rate security
+
+Currency uses a fixed HTTPS connection to `api.frankfurter.dev` and does not accept a configurable hostname, redirect target, API key, or executable content. The response is size-limited, parsed only as rate data, and written through a temporary file before atomically replacing the local JSON cache. A failed or malformed response never replaces a previously working cache.
+
 ## Current limitation
 
 Releases are not Authenticode-signed because the project does not currently have a code-signing certificate. Users should download from this repository's Releases page and may compare the EXE with the published `.sha256` file.

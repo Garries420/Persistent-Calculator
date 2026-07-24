@@ -46,3 +46,4 @@ void display_format_ascii_number(const char *source, wchar_t *destination,
     }
     destination[used] = L'\0';
 }
+

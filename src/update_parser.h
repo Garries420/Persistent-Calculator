@@ -14,3 +14,4 @@ int update_compare_versions(const char *candidate, const char *current);
 int update_parse_release_json(const char *json, UpdateReleaseInfo *release);
 
 #endif
+

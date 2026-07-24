@@ -18,6 +18,14 @@ if errorlevel 1 exit /b 1
 build\test_updater.exe
 if errorlevel 1 exit /b 1
 
+cl /nologo /O2 /W4 /WX /utf-8 /TC /D_CRT_SECURE_NO_WARNINGS ^
+  tests\test_extras.c src\extras.c ^
+  /Fo:build\ /Fe:build\test_extras.exe ^
+  /link user32.lib gdi32.lib shell32.lib winhttp.lib
+if errorlevel 1 exit /b 1
+build\test_extras.exe
+if errorlevel 1 exit /b 1
+
 pushd assets
 rc /nologo /fo ..\build\app.res app.rc
 if errorlevel 1 (
@@ -27,7 +35,7 @@ if errorlevel 1 (
 popd
 
 cl /nologo /O2 /W4 /WX /utf-8 /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /MT ^
-  src\main.c src\calc_engine.c src\display_format.c src\updater.c src\update_parser.c build\app.res ^
+  src\main.c src\calc_engine.c src\display_format.c src\extras.c src\updater.c src\update_parser.c build\app.res ^
   /Fo:build\ /Fe:dist\PersistentCalculator.exe ^
   /link /SUBSYSTEM:WINDOWS user32.lib gdi32.lib dwmapi.lib shell32.lib advapi32.lib winhttp.lib bcrypt.lib
 if errorlevel 1 exit /b 1

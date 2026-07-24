@@ -130,3 +130,4 @@ int update_parse_release_json(const char *json, UpdateReleaseInfo *release) {
     }
     return 0;
 }
+

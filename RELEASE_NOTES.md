@@ -1,7 +1,7 @@
-# Persistent Calculator 1.1.0
+# Persistent Calculator 2.0.0
 
-This update adds spaced digit grouping for large totals, a five-release scrollable in-app changelog, two-second routine update notices, an update-now-or-later choice, and private-safe update progress with download, verification, and installation stages.
+Version 2.0.0 adds Scientific, Programmer, Date calculation, and converters for Currency, Volume, Length, Weight and mass, Temperature, Energy, Area, Speed, Time, Power, Data, Pressure, and Angle. Graphing is not included.
 
-Download `PersistentCalculator.exe` and run it directly—no installer is required.
+Currency uses Frankfurter daily reference rates, location-aware alphabetized currency choices, symbols, type-to-jump navigation, and a persistent local JSON cache. Date calculation now has navigable calendars, while results throughout the calculator support selection, copying, and pasting.
 
-The accompanying `PersistentCalculator.exe.sha256` file contains the release hash. Windows SmartScreen may show a reputation warning because the project does not currently have a paid code-signing certificate.
+The navigation menu uses the supplied mode icons, and History, Changelogs, and Check for updates remain available from the header. Download `PersistentCalculator.exe` and run it directly—no installer is required.

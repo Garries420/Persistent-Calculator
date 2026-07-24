@@ -431,3 +431,4 @@ void calc_memory_subtract(CalcState *state) {
     state->memory = (state->has_memory ? state->memory : 0.0) - calc_value(state);
     state->has_memory = 1;
 }
+
