@@ -25,5 +25,3 @@ The updater fails closed: a missing digest, malformed response, wrong domain/rep
 ## Current limitation
 
 Releases are not Authenticode-signed because the project does not currently have a code-signing certificate. Users should download from this repository's Releases page and may compare the EXE with the published `.sha256` file.
-
-The project is preparing an application for free open-source signing through SignPath Foundation. Current releases remain unsigned until a published executable carries a verifiable Authenticode signature. See the [Code signing policy](CODE_SIGNING.md).
