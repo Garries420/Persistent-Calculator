@@ -21,7 +21,7 @@ if errorlevel 1 exit /b 1
 cl /nologo /O2 /W4 /WX /utf-8 /TC /D_CRT_SECURE_NO_WARNINGS ^
   tests\test_extras.c src\extras.c ^
   /Fo:build\ /Fe:build\test_extras.exe ^
-  /link user32.lib gdi32.lib shell32.lib winhttp.lib
+  /link user32.lib gdi32.lib shell32.lib advapi32.lib winhttp.lib
 if errorlevel 1 exit /b 1
 build\test_extras.exe
 if errorlevel 1 exit /b 1
