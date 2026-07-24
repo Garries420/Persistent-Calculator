@@ -1,0 +1,77 @@
+name: One-time v2.0.0 release asset refresh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/refresh-v2-release.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  refresh-release-assets:
+    if: github.repository == 'Garries420/Persistent-Calculator'
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: v2.0.0
+      SOURCE_RUN_ID: "30122298437"
+      SOURCE_COMMIT: "45840b7c20e1c67a182638ed91d2a5d9f1889cf9"
+      EXPECTED_SHA256: "2aa2913451c95770734a3086c8f4b908488494001262f276630ddcb19e2707da"
+    steps:
+      - name: Download and verify approved build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN_ID" | ConvertFrom-Json
+          if ($run.head_sha -ne $env:SOURCE_COMMIT) { throw "Source workflow commit does not match the approved commit." }
+          if ($run.status -ne "completed" -or $run.conclusion -ne "success") { throw "Source workflow was not successful." }
+
+          New-Item -ItemType Directory -Force -Path staging, release | Out-Null
+          gh run download $env:SOURCE_RUN_ID --repo $env:GITHUB_REPOSITORY --name PersistentCalculator-windows-x64 --dir staging
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $executables = @(Get-ChildItem staging -Filter PersistentCalculator.exe -File -Recurse)
+          if ($executables.Count -ne 1) { throw "Expected exactly one PersistentCalculator.exe in the approved artifact." }
+          Copy-Item $executables[0].FullName release/PersistentCalculator.exe
+
+          $hash = (Get-FileHash release/PersistentCalculator.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:EXPECTED_SHA256) { throw "Approved executable checksum mismatch." }
+          [System.IO.File]::WriteAllText("release/PersistentCalculator.exe.sha256", "$hash  PersistentCalculator.exe$([Environment]::NewLine)", [System.Text.Encoding]::ASCII)
+
+      - name: Replace only the v2.0.0 executable and checksum
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload $env:RELEASE_TAG release/PersistentCalculator.exe release/PersistentCalculator.exe.sha256 --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify published release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path verify | Out-Null
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern PersistentCalculator.exe --pattern PersistentCalculator.exe.sha256 --dir verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $hash = (Get-FileHash verify/PersistentCalculator.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:EXPECTED_SHA256) { throw "Published executable checksum mismatch." }
+          $checksumText = (Get-Content verify/PersistentCalculator.exe.sha256 -Raw).Trim()
+          if ($checksumText -ne "$env:EXPECTED_SHA256  PersistentCalculator.exe") { throw "Published checksum file does not match the executable." }
+
+      - name: Remove this temporary workflow
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $path = ".github/workflows/refresh-v2-release.yml"
+          $file = gh api "repos/$env:GITHUB_REPOSITORY/contents/$path?ref=main" 2>$null | ConvertFrom-Json
+          if ($file.sha) {
+            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/contents/$path" -f message="Remove temporary v2.0.0 release refresh workflow" -f sha="$($file.sha)" -f branch="main"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
