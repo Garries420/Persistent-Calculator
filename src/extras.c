@@ -1699,7 +1699,7 @@ static void draw_scientific_popup(HDC dc, int width, UINT dpi,
 static void draw_scientific(HDC dc, int width, int height, UINT dpi,
                             int hot_id, int pressed_id) {
     HFONT normal = extra_font(dpi, 11, FW_NORMAL);
-    HFONT small = extra_font(dpi, 9, FW_NORMAL);
+    HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
     wchar_t display[128];
     wchar_t pending[128] = L"";
     RECT pending_rect = {sx(12, dpi), sx(58, dpi), width - sx(12, dpi), sx(83, dpi)};
@@ -1724,17 +1724,17 @@ static void draw_scientific(HDC dc, int width, int height, UINT dpi,
     }
     format_double_wide(scientific_value(), display, _countof(display));
     if (g_scientific.error) copy_wide(display, _countof(display), L"Invalid input");
-    text_color(dc, pending, pending_rect, small, RGB(170, 175, 176),
+    text_color(dc, pending, pending_rect, small_font, RGB(170, 175, 176),
                DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     fit_text(dc, display, display_rect, dpi, 32, 11, FW_SEMIBOLD,
              RGB(246, 246, 246), DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     text_color(dc, g_scientific.angle_mode == 0 ? L"DEG" :
                    g_scientific.angle_mode == 1 ? L"RAD" : L"GRAD",
-               angle_rect, small,
+               angle_rect, small_font,
                hot_id == EXTRA_ID_BASE + 60 ? RGB(246, 246, 246)
                                              : RGB(205, 208, 209),
                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    text_color(dc, L"F-E", fe_rect, small,
+    text_color(dc, L"F-E", fe_rect, small_font,
                g_scientific.f_e ? RGB(156, 198, 217) :
                hot_id == EXTRA_ID_BASE + 61 ? RGB(246, 246, 246)
                                              : RGB(205, 208, 209),
@@ -1749,7 +1749,7 @@ static void draw_scientific(HDC dc, int width, int height, UINT dpi,
         round_color(dc, &rect, fill, sx(4, dpi));
         text_color(dc, index == 0 ? L"△  Trigonometry   ⌄"
                                   : L"ƒ  Function   ⌄",
-                   rect, small, RGB(246, 246, 246),
+                   rect, small_font, RGB(246, 246, 246),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     for (index = 0; index < 35; ++index) {
@@ -1771,7 +1771,7 @@ static void draw_scientific(HDC dc, int width, int height, UINT dpi,
     }
     if (g_scientific.popup)
         draw_scientific_popup(dc, width, dpi, hot_id, pressed_id);
-    DeleteObject(small);
+    DeleteObject(small_font);
     DeleteObject(normal);
 }
 
@@ -1892,7 +1892,7 @@ static void draw_programmer_popup(HDC dc, int width, UINT dpi,
     int count = g_programmer.popup == 1 ? 6 : 4;
     int base = g_programmer.popup == 1 ? 170 : 180;
     HFONT normal = extra_font(dpi, 10, FW_NORMAL);
-    HFONT small = extra_font(dpi, 9, FW_NORMAL);
+    HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
     RECT panel = {sx(5, dpi), sx(234, dpi), width - sx(5, dpi),
                   sx(g_programmer.popup == 1 ? 338 : 426, dpi)};
     int index;
@@ -1914,12 +1914,12 @@ static void draw_programmer_popup(HDC dc, int width, UINT dpi,
             label = bitwise[index];
         }
         round_color(dc, &rect, fill, sx(4, dpi));
-        text_color(dc, label, rect, g_programmer.popup == 2 ? small : normal,
+        text_color(dc, label, rect, g_programmer.popup == 2 ? small_font : normal,
                    RGB(246, 246, 246),
                    (g_programmer.popup == 2 ? DT_LEFT : DT_CENTER) |
                    DT_VCENTER | DT_SINGLELINE);
     }
-    DeleteObject(small);
+    DeleteObject(small_font);
     DeleteObject(normal);
 }
 
@@ -1957,7 +1957,7 @@ static void draw_programmer(HDC dc, int width, int height, UINT dpi,
     static const wchar_t *const bases[] = {L"HEX", L"DEC", L"OCT", L"BIN"};
     static const int base_values[] = {16, 10, 8, 2};
     HFONT normal = extra_font(dpi, 10, FW_NORMAL);
-    HFONT small = extra_font(dpi, 8, FW_NORMAL);
+    HFONT small_font = extra_font(dpi, 8, FW_NORMAL);
     wchar_t text[96];
     int index;
     {
@@ -1985,7 +1985,7 @@ static void draw_programmer(HDC dc, int width, int height, UINT dpi,
                                row.left + sx(3, dpi), row.bottom - sx(2, dpi)};
                 round_color(dc, &marker, RGB(156, 198, 217), sx(2, dpi));
             }
-            text_color(dc, bases[index], name_rect, small,
+            text_color(dc, bases[index], name_rect, small_font,
                        g_programmer.base == base_values[index]
                            ? RGB(156, 198, 217) : RGB(220, 222, 223),
                        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -2030,7 +2030,7 @@ static void draw_programmer(HDC dc, int width, int height, UINT dpi,
             SelectObject(dc, old_brush);
             DeleteObject(dot);
         } else {
-            text_color(dc, label, rect, small, RGB(246, 246, 246),
+            text_color(dc, label, rect, small_font, RGB(246, 246, 246),
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
     }
@@ -2052,13 +2052,13 @@ static void draw_programmer(HDC dc, int width, int height, UINT dpi,
         else if (!digit_disabled && id == hot_id)
             fill = index == 29 ? RGB(176, 213, 230) : RGB(69, 69, 69);
         round_color(dc, &rect, fill, sx(4, dpi));
-        text_color(dc, programmer_label(index), rect, small, color,
+        text_color(dc, programmer_label(index), rect, small_font, color,
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     }
     if (g_programmer.popup)
         draw_programmer_popup(dc, width, dpi, hot_id, pressed_id);
-    DeleteObject(small);
+    DeleteObject(small_font);
     DeleteObject(normal);
 }
 
@@ -2269,7 +2269,7 @@ static void draw_date_calendar(HDC dc, int width, int height, UINT dpi,
 static void draw_date(HDC dc, int width, int height, UINT dpi,
                       int hot_id, int pressed_id) {
     HFONT normal = extra_font(dpi, 11, FW_NORMAL);
-    HFONT small = extra_font(dpi, 9, FW_NORMAL);
+    HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
     int index;
     for (index = 0; index < 2; ++index) {
         int id = EXTRA_ID_BASE + 200 + index;
@@ -2278,13 +2278,13 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
         if (id == hot_id) fill = RGB(69, 69, 69);
         round_color(dc, &rect, fill, sx(5, dpi));
         text_color(dc, index == 0 ? L"Difference" : L"Add or subtract",
-                   rect, small, RGB(246, 246, 246),
+                   rect, small_font, RGB(246, 246, 246),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     {
         RECT label = {sx(18, dpi), sx(103, dpi), width - sx(18, dpi), sx(125, dpi)};
         text_color(dc, g_date.add_mode ? L"Starting date" : L"From",
-                   label, small, RGB(170, 175, 176),
+                   label, small_font, RGB(170, 175, 176),
                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         draw_date_field(dc, 0, width, dpi, hot_id, pressed_id);
     }
@@ -2295,10 +2295,10 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
         RECT difference_label = {sx(18, dpi), sx(278, dpi),
                                  width - sx(18, dpi), sx(307, dpi)};
         RECT result_rect = date_result_rect(width, height, dpi);
-        text_color(dc, L"To", to_label, small, RGB(170, 175, 176),
+        text_color(dc, L"To", to_label, small_font, RGB(170, 175, 176),
                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         draw_date_field(dc, 1, width, dpi, hot_id, pressed_id);
-        text_color(dc, L"Difference", difference_label, small, RGB(170, 175, 176),
+        text_color(dc, L"Difference", difference_label, small_font, RGB(170, 175, 176),
                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         _snwprintf(result, _countof(result), L"%lld day%ls apart",
                    days, days == 1 ? L"" : L"s");
@@ -2333,7 +2333,7 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
                                 ? RGB(73, 85, 90) : RGB(50, 50, 50);
             if (id == hot_id) fill = RGB(69, 69, 69);
             round_color(dc, &rect, fill, sx(4, dpi));
-            text_color(dc, labels[index], rect, small, RGB(246, 246, 246),
+            text_color(dc, labels[index], rect, small_font, RGB(246, 246, 246),
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
         fit_text(dc, result_text, result_rect, dpi, 27, 13, FW_SEMIBOLD,
@@ -2341,7 +2341,7 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
     }
     if (g_date.calendar_target)
         draw_date_calendar(dc, width, height, dpi, hot_id, pressed_id);
-    DeleteObject(small);
+    DeleteObject(small_font);
     DeleteObject(normal);
 }
 
@@ -2485,7 +2485,7 @@ static void draw_converter_picker(HDC dc, int width, int height, UINT dpi,
                   top + panel_height < height - sx(8, dpi)
                       ? top + panel_height : height - sx(8, dpi)};
     HFONT normal = extra_font(dpi, 11, FW_NORMAL);
-    HFONT small = extra_font(dpi, 9, FW_NORMAL);
+    HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
     fill_color(dc, &panel, RGB(39, 44, 46));
     {
         RECT heading = {panel.left + sx(12, dpi), panel.top,
@@ -2542,7 +2542,7 @@ static void draw_converter_picker(HDC dc, int width, int height, UINT dpi,
         fit_text(dc, label, row, dpi, 10, 7, FW_NORMAL, RGB(246, 246, 246),
                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
-    DeleteObject(small);
+    DeleteObject(small_font);
     DeleteObject(normal);
 }
 
@@ -2555,7 +2555,7 @@ static void draw_converter(HDC dc, int width, int height, UINT dpi,
         L"", L"0", L",", L""
     };
     HFONT normal = extra_font(dpi, 11, FW_NORMAL);
-    HFONT small = extra_font(dpi, 9, FW_NORMAL);
+    HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
     wchar_t input[128];
     wchar_t output[128];
     wchar_t unit_text[160];
@@ -2614,7 +2614,7 @@ static void draw_converter(HDC dc, int width, int height, UINT dpi,
              DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     if (g_mode == MODE_CURRENCY && rate_text[0]) {
         RECT rate = {sx(10, dpi), sx(181, dpi), width - sx(10, dpi), sx(205, dpi)};
-        text_color(dc, rate_text, rate, small, RGB(190, 194, 195),
+        text_color(dc, rate_text, rate, small_font, RGB(190, 194, 195),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     if (hot_id == EXTRA_ID_BASE + 400) round_color(dc, &from_unit, RGB(59, 59, 59), sx(4, dpi));
@@ -2658,7 +2658,7 @@ static void draw_converter(HDC dc, int width, int height, UINT dpi,
         RECT source = currency_source_rect(width, dpi);
         RECT gathered = {sx(10, dpi), height - sx(16, dpi),
                          width - sx(10, dpi), height - sx(3, dpi)};
-        text_color(dc, g_currency_status, source, small, RGB(156, 198, 217),
+        text_color(dc, g_currency_status, source, small_font, RGB(156, 198, 217),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         if (hot_id == EXTRA_ID_CURRENCY_SOURCE) {
             HPEN pen = CreatePen(PS_SOLID, 1, RGB(156, 198, 217));
@@ -2669,12 +2669,12 @@ static void draw_converter(HDC dc, int width, int height, UINT dpi,
             DeleteObject(pen);
         }
         text_color(dc, g_currency_gathered[0] ? g_currency_gathered : L"No saved rates yet",
-                   gathered, small, RGB(170, 175, 176),
+                   gathered, small_font, RGB(170, 175, 176),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     if (g_converter.picker_open)
         draw_converter_picker(dc, width, height, dpi, hot_id, pressed_id);
-    DeleteObject(small);
+    DeleteObject(small_font);
     DeleteObject(normal);
 }
 
