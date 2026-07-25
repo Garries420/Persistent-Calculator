@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1 — 2026-07-25
+
+- Standard, Scientific, and Programmer now use the exact Calculator Fluent Icons from Microsoft's open-source Calculator project.
+- Programmer now has separate Full keypad and Bit toggling keypad controls, including clear hover labels.
+- Open calendars, amount lists, and converter pickers now close when clicking anywhere outside them.
+
 ## 2.0.0 — 2026-07-24
 
 - Added Scientific and Programmer calculators and Date calculation.

@@ -29,6 +29,7 @@
 #define EXTRA_MAX_CURRENCIES 256
 #define EXTRA_MAX_PICKER_ROWS 8
 #define EXTRA_DATE_AMOUNT_PICKER_ROWS 8
+#define EXTRA_ID_DISMISS_POPUP (EXTRA_ID_BASE + 950)
 
 typedef struct UnitDef {
     const wchar_t *name;
@@ -1767,6 +1768,17 @@ static HFONT extra_font(UINT dpi, int points, int weight) {
     return CreateFontIndirectW(&font);
 }
 
+static HFONT extra_icon_font(UINT dpi, int points) {
+    LOGFONTW font;
+    ZeroMemory(&font, sizeof(font));
+    font.lfHeight = -MulDiv(points, (int)(dpi ? dpi : 96), 72);
+    font.lfWeight = FW_NORMAL;
+    font.lfQuality = CLEARTYPE_QUALITY;
+    copy_wide(font.lfFaceName, _countof(font.lfFaceName),
+              L"Calculator Fluent Icons");
+    return CreateFontIndirectW(&font);
+}
+
 static void fill_color(HDC dc, const RECT *rect, COLORREF color) {
     HBRUSH brush = CreateSolidBrush(color);
     FillRect(dc, rect, brush);
@@ -1838,15 +1850,39 @@ static RECT table_button_rect(int index, int columns, int rows, int top,
 
 static const wchar_t *scientific_label(int index) {
     static const wchar_t *const labels[] = {
-        L"2ⁿᵈ", L"π", L"e", L"C", L"⌫",
-        L"x²", L"1/x", L"|x|", L"exp", L"mod",
-        L"²√x", L"(", L")", L"n!", L"÷",
-        L"xʸ", L"7", L"8", L"9", L"×",
-        L"10ˣ", L"4", L"5", L"6", L"−",
-        L"log", L"1", L"2", L"3", L"+",
-        L"ln", L"+/−", L"0", L",", L"="
+        L"\xF897", L"\xF7CF", L"e", L"C", L"\xE94F",
+        L"\xF7C8", L"\xF7C9", L"\xF884", L"exp", L"mod",
+        L"\xF899", L"(", L")", L"\xF887", L"\xE94A",
+        L"\xF7CA", L"7", L"8", L"9", L"\xE947",
+        L"\xF7CC", L"4", L"5", L"6", L"\xE949",
+        L"log", L"1", L"2", L"3", L"\xE948",
+        L"ln", L"\xF898", L"0", L",", L"\xE94E"
     };
     return index >= 0 && index < (int)_countof(labels) ? labels[index] : L"";
+}
+
+static int scientific_label_is_icon(int index) {
+    switch (index) {
+        case 0:
+        case 1:
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+        case 10:
+        case 13:
+        case 14:
+        case 15:
+        case 19:
+        case 20:
+        case 24:
+        case 29:
+        case 31:
+        case 34:
+            return 1;
+        default:
+            return 0;
+    }
 }
 
 static RECT scientific_option_rect(int index, int width, UINT dpi) {
@@ -1880,11 +1916,11 @@ static RECT scientific_popup_item_rect(int index, int columns, int width, UINT d
 static void draw_scientific_popup(HDC dc, int width, UINT dpi,
                                   int hot_id, int pressed_id) {
     static const wchar_t *const trig_labels[] = {
-        L"2ⁿᵈ", L"sin", L"cos", L"tan",
+        L"\xF897", L"sin", L"cos", L"tan",
         L"hyp", L"sec", L"csc", L"cot"
     };
     static const wchar_t *const function_labels[] = {
-        L"|x|", L"⌊x⌋", L"⌈x⌉", L"rand", L"→dms", L"→deg"
+        L"\xF884", L"\xF885", L"\xF886", L"rand", L"\xF890", L"\xF891"
     };
     const wchar_t *const *labels = g_scientific.popup == 1
                                        ? trig_labels : function_labels;
@@ -1893,6 +1929,7 @@ static void draw_scientific_popup(HDC dc, int width, UINT dpi,
     int columns = g_scientific.popup == 1 ? 4 : 3;
     int base = g_scientific.popup == 1 ? 70 : 80;
     HFONT font = extra_font(dpi, 10, FW_NORMAL);
+    HFONT icon_font = extra_icon_font(dpi, 12);
     RECT panel = {sx(5, dpi), sx(221, dpi), width - sx(5, dpi), sx(320, dpi)};
     int index;
     round_color(dc, &panel, RGB(42, 42, 42), sx(5, dpi));
@@ -1906,9 +1943,16 @@ static void draw_scientific_popup(HDC dc, int width, UINT dpi,
              (index == 4 && g_scientific.hyperbolic)))
             fill = RGB(73, 85, 90);
         round_color(dc, &rect, fill, sx(4, dpi));
-        text_color(dc, labels[index], rect, font, RGB(246, 246, 246),
+        text_color(dc, labels[index], rect,
+                   (g_scientific.popup == 1 && index == 0) ||
+                   (g_scientific.popup == 2 &&
+                    (index == 0 || index == 1 || index == 2 ||
+                     index == 4 || index == 5))
+                       ? icon_font : font,
+                   RGB(246, 246, 246),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
+    DeleteObject(icon_font);
     DeleteObject(font);
 }
 
@@ -1916,6 +1960,7 @@ static void draw_scientific(HDC dc, int width, int height, UINT dpi,
                             int hot_id, int pressed_id) {
     HFONT normal = extra_font(dpi, 11, FW_NORMAL);
     HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
+    HFONT icon_font = extra_icon_font(dpi, 12);
     wchar_t display[128];
     wchar_t pending[128] = L"";
     RECT pending_rect = {sx(12, dpi), sx(58, dpi), width - sx(12, dpi), sx(83, dpi)};
@@ -1958,14 +2003,23 @@ static void draw_scientific(HDC dc, int width, int height, UINT dpi,
     for (index = 0; index < 2; ++index) {
         int id = EXTRA_ID_BASE + 62 + index;
         RECT rect = scientific_option_rect(index, width, dpi);
+        RECT icon_rect = rect;
+        RECT label_rect = rect;
         COLORREF fill = id == pressed_id ? RGB(78, 78, 78) :
                         id == hot_id ? RGB(62, 62, 62) :
                         g_scientific.popup == index + 1 ? RGB(62, 70, 73)
                                                        : RGB(50, 50, 50);
         round_color(dc, &rect, fill, sx(4, dpi));
-        text_color(dc, index == 0 ? L"△  Trigonometry   ⌄"
-                                  : L"ƒ  Function   ⌄",
-                   rect, small_font, RGB(246, 246, 246),
+        icon_rect.left += sx(9, dpi);
+        icon_rect.right = icon_rect.left + sx(20, dpi);
+        label_rect.left += sx(29, dpi);
+        label_rect.right -= sx(7, dpi);
+        text_color(dc, index == 0 ? L"\xF892" : L"\xF893",
+                   icon_rect, icon_font, RGB(246, 246, 246),
+                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text_color(dc, index == 0 ? L"Trigonometry  ⌄"
+                                  : L"Function  ⌄",
+                   label_rect, small_font, RGB(246, 246, 246),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     for (index = 0; index < 35; ++index) {
@@ -1982,12 +2036,14 @@ static void draw_scientific(HDC dc, int width, int height, UINT dpi,
         else if (id == hot_id) fill = index == 34 ? RGB(176, 213, 230) : RGB(69, 69, 69);
         if (index == 0 && g_scientific.inverse) fill = RGB(73, 85, 90);
         round_color(dc, &rect, fill, sx(5, dpi));
-        text_color(dc, scientific_label(index), rect, normal, color,
+        text_color(dc, scientific_label(index), rect,
+                   scientific_label_is_icon(index) ? icon_font : normal, color,
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     if (g_scientific.popup)
         draw_scientific_popup(dc, width, dpi, hot_id, pressed_id);
     DeleteObject(small_font);
+    DeleteObject(icon_font);
     DeleteObject(normal);
 }
 
@@ -2013,14 +2069,20 @@ static void format_programmer(uint64_t value, int base, wchar_t *output, size_t 
 
 static const wchar_t *programmer_label(int index) {
     static const wchar_t *const labels[] = {
-        L"A", L"<<", L">>", L"C", L"⌫",
-        L"B", L"(", L")", L"%", L"÷",
-        L"C", L"7", L"8", L"9", L"×",
-        L"D", L"4", L"5", L"6", L"−",
-        L"E", L"1", L"2", L"3", L"+",
-        L"F", L"+/−", L"0", L"", L"="
+        L"A", L"\xF88E", L"\xF88F", L"C", L"\xE94F",
+        L"B", L"(", L")", L"%", L"\xE94A",
+        L"C", L"7", L"8", L"9", L"\xE947",
+        L"D", L"4", L"5", L"6", L"\xE949",
+        L"E", L"1", L"2", L"3", L"\xE948",
+        L"F", L"\xF898", L"0", L"", L"\xE94E"
     };
     return index >= 0 && index < (int)_countof(labels) ? labels[index] : L"";
+}
+
+static int programmer_label_is_icon(int index) {
+    return index == 1 || index == 2 || index == 4 || index == 9 ||
+           index == 14 || index == 19 || index == 24 || index == 26 ||
+           index == 29;
 }
 
 static RECT programmer_base_rect(int index, int width, UINT dpi) {
@@ -2030,7 +2092,7 @@ static RECT programmer_base_rect(int index, int width, UINT dpi) {
 }
 
 static RECT programmer_tool_rect(int index, int width, UINT dpi) {
-    static const int proportions[] = {0, 14, 39, 71, 100};
+    static const int proportions[] = {0, 13, 26, 50, 74, 100};
     int margin = sx(7, dpi);
     int available = width - margin * 2;
     RECT rect = {
@@ -2040,6 +2102,42 @@ static RECT programmer_tool_rect(int index, int width, UINT dpi) {
         sx(233, dpi)
     };
     return rect;
+}
+
+static void draw_programmer_tooltip(HDC dc, int width, UINT dpi,
+                                    int hot_id, HFONT font) {
+    const wchar_t *label;
+    RECT anchor;
+    RECT tooltip;
+    SIZE size = {0, 0};
+    HGDIOBJ old_font;
+    int center;
+    if (hot_id == EXTRA_ID_BASE + 160)
+        label = L"Full keypad";
+    else if (hot_id == EXTRA_ID_BASE + 161)
+        label = L"Bit toggling keypad";
+    else
+        return;
+    anchor = programmer_tool_rect(hot_id - (EXTRA_ID_BASE + 160), width, dpi);
+    old_font = SelectObject(dc, font);
+    GetTextExtentPoint32W(dc, label, (int)wcslen(label), &size);
+    SelectObject(dc, old_font);
+    center = (anchor.left + anchor.right) / 2;
+    tooltip.left = center - size.cx / 2 - sx(8, dpi);
+    tooltip.right = center + size.cx / 2 + sx(8, dpi);
+    if (tooltip.left < sx(4, dpi)) {
+        tooltip.right += sx(4, dpi) - tooltip.left;
+        tooltip.left = sx(4, dpi);
+    }
+    if (tooltip.right > width - sx(4, dpi)) {
+        tooltip.left -= tooltip.right - (width - sx(4, dpi));
+        tooltip.right = width - sx(4, dpi);
+    }
+    tooltip.top = sx(160, dpi);
+    tooltip.bottom = sx(188, dpi);
+    round_color(dc, &tooltip, RGB(55, 55, 55), sx(4, dpi));
+    text_color(dc, label, tooltip, font, RGB(246, 246, 246),
+               DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 static RECT programmer_popup_item_rect(int index, int width, UINT dpi) {
@@ -2174,6 +2272,7 @@ static void draw_programmer(HDC dc, int width, int height, UINT dpi,
     static const int base_values[] = {16, 10, 8, 2};
     HFONT normal = extra_font(dpi, 10, FW_NORMAL);
     HFONT small_font = extra_font(dpi, 8, FW_NORMAL);
+    HFONT icon_font = extra_icon_font(dpi, 12);
     wchar_t text[96];
     int index;
     {
@@ -2210,44 +2309,45 @@ static void draw_programmer(HDC dc, int width, int height, UINT dpi,
                      DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         }
     }
-    for (index = 0; index < 4; ++index) {
+    for (index = 0; index < 5; ++index) {
         int id = EXTRA_ID_BASE + 160 + index;
         RECT rect = programmer_tool_rect(index, width, dpi);
+        int selected = (index == 0 && !g_programmer.bit_keypad) ||
+                       (index == 1 && g_programmer.bit_keypad);
         COLORREF fill = id == pressed_id ? RGB(78, 78, 78) :
                         id == hot_id ? RGB(62, 62, 62) :
-                        ((index == 0 && g_programmer.bit_keypad) ||
-                         (index == 1 && g_programmer.popup == 1) ||
-                         (index == 2 && g_programmer.popup == 2))
+                        ((index == 2 && g_programmer.popup == 1) ||
+                         (index == 3 && g_programmer.popup == 2))
                             ? RGB(62, 70, 73) : RGB(43, 43, 43);
-        const wchar_t *label = index == 1 ? L"Bitwise⌄" :
-                               index == 2 ? L"Bit shift⌄" :
+        const wchar_t *label = index == 2 ? L"Bitwise⌄" :
+                               index == 3 ? L"Bit shift⌄" :
                                g_programmer.bits == 64 ? L"QWORD" :
                                g_programmer.bits == 32 ? L"DWORD" :
                                g_programmer.bits == 16 ? L"WORD" : L"BYTE";
         round_color(dc, &rect, fill, sx(4, dpi));
-        if (index == 0) {
-            HBRUSH dot = CreateSolidBrush(RGB(246, 246, 246));
-            HGDIOBJ old_brush = SelectObject(dc, dot);
-            HGDIOBJ old_pen = SelectObject(dc, GetStockObject(NULL_PEN));
-            int column;
-            int row;
-            int center_x = (rect.left + rect.right) / 2;
-            int center_y = (rect.top + rect.bottom) / 2;
-            int radius = sx(2, dpi);
-            int spacing = sx(7, dpi);
-            for (row = -1; row <= 1; ++row) {
-                for (column = -1; column <= 1; ++column) {
-                    int x = center_x + column * spacing;
-                    int y = center_y + row * spacing;
-                    Ellipse(dc, x - radius, y - radius, x + radius + 1, y + radius + 1);
-                }
-            }
-            SelectObject(dc, old_pen);
-            SelectObject(dc, old_brush);
-            DeleteObject(dot);
+        if (index == 0 || index == 1) {
+            text_color(dc, index == 0 ? L"\xE75F" : L"\xF7D0",
+                       rect, icon_font, RGB(246, 246, 246),
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        } else if (index == 2 || index == 3) {
+            RECT icon_rect = rect;
+            RECT label_rect = rect;
+            icon_rect.left += sx(3, dpi);
+            icon_rect.right = icon_rect.left + sx(15, dpi);
+            label_rect.left += sx(15, dpi);
+            text_color(dc, index == 2 ? L"\xF895" : L"\xE301",
+                       icon_rect, icon_font, RGB(246, 246, 246),
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            text_color(dc, label, label_rect, small_font, RGB(246, 246, 246),
+                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         } else {
             text_color(dc, label, rect, small_font, RGB(246, 246, 246),
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        if (selected) {
+            RECT marker = {rect.left + sx(7, dpi), rect.bottom - sx(3, dpi),
+                           rect.right - sx(7, dpi), rect.bottom};
+            round_color(dc, &marker, RGB(156, 198, 217), sx(2, dpi));
         }
     }
     if (g_programmer.bit_keypad) {
@@ -2268,12 +2368,17 @@ static void draw_programmer(HDC dc, int width, int height, UINT dpi,
         else if (!digit_disabled && id == hot_id)
             fill = index == 29 ? RGB(176, 213, 230) : RGB(69, 69, 69);
         round_color(dc, &rect, fill, sx(4, dpi));
-        text_color(dc, programmer_label(index), rect, small_font, color,
+        text_color(dc, programmer_label(index), rect,
+                   programmer_label_is_icon(index) ? icon_font : small_font,
+                   color,
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     }
     if (g_programmer.popup)
         draw_programmer_popup(dc, width, dpi, hot_id, pressed_id);
+    else
+        draw_programmer_tooltip(dc, width, dpi, hot_id, small_font);
+    DeleteObject(icon_font);
     DeleteObject(small_font);
     DeleteObject(normal);
 }
@@ -3823,6 +3928,10 @@ int extras_hit_test(int x, int y, int width, int height, UINT dpi) {
                 if (inside(scientific_popup_item_rect(index, columns, width, dpi),
                            x, y))
                     return EXTRA_ID_BASE + base + index;
+            for (index = 0; index < 2; ++index)
+                if (inside(scientific_option_rect(index, width, dpi), x, y))
+                    return EXTRA_ID_BASE + 62 + index;
+            return EXTRA_ID_DISMISS_POPUP;
         }
         {
             RECT angle = {sx(12, dpi), sx(151, dpi), sx(75, dpi), sx(181, dpi)};
@@ -3844,11 +3953,15 @@ int extras_hit_test(int x, int y, int width, int height, UINT dpi) {
             for (index = 0; index < count; ++index)
                 if (inside(programmer_popup_item_rect(index, width, dpi), x, y))
                     return EXTRA_ID_BASE + base + index;
+            for (index = 2; index <= 3; ++index)
+                if (inside(programmer_tool_rect(index, width, dpi), x, y))
+                    return EXTRA_ID_BASE + 160 + index;
+            return EXTRA_ID_DISMISS_POPUP;
         }
         for (index = 0; index < 4; ++index)
             if (inside(programmer_base_rect(index, width, dpi), x, y))
                 return EXTRA_ID_BASE + 100 + index;
-        for (index = 0; index < 4; ++index)
+        for (index = 0; index < 5; ++index)
             if (inside(programmer_tool_rect(index, width, dpi), x, y))
                 return EXTRA_ID_BASE + 160 + index;
         if (g_programmer.bit_keypad) {
@@ -3882,13 +3995,14 @@ int extras_hit_test(int x, int y, int width, int height, UINT dpi) {
                                : date_calendar_choice_rect(index, width, height, dpi),
                            x, y))
                     return EXTRA_ID_BASE + 222 + index;
-            return -1;
+            return EXTRA_ID_DISMISS_POPUP;
         }
         if (g_date.amount_picker) {
             for (index = 0; index < EXTRA_DATE_AMOUNT_PICKER_ROWS; ++index)
                 if (inside(date_amount_picker_row_rect(index, width, height, dpi),
                            x, y))
                     return EXTRA_ID_BASE + 260 + index;
+            return EXTRA_ID_DISMISS_POPUP;
         }
         for (index = 0; index < 2; ++index)
             if (inside(date_mode_rect(index, width, dpi), x, y))
@@ -3919,7 +4033,7 @@ int extras_hit_test(int x, int y, int width, int height, UINT dpi) {
                             panel.top + sx(48, dpi) + (index + 1) * row_height - sx(2, dpi)};
                 if (inside(row, x, y)) return EXTRA_ID_BASE + 500 + index;
             }
-            return -1;
+            return EXTRA_ID_DISMISS_POPUP;
         }
         if (g_mode == MODE_CURRENCY &&
             inside(currency_source_rect(width, dpi), x, y))
@@ -4038,13 +4152,16 @@ static void activate_programmer_control(int id) {
         g_programmer.base = bases[id - (EXTRA_ID_BASE + 100)];
         g_programmer.popup = 0;
     } else if (id == EXTRA_ID_BASE + 160) {
-        g_programmer.bit_keypad = !g_programmer.bit_keypad;
+        g_programmer.bit_keypad = 0;
         g_programmer.popup = 0;
-    } else if (id == EXTRA_ID_BASE + 161 || id == EXTRA_ID_BASE + 162) {
-        int popup = id - (EXTRA_ID_BASE + 160);
+    } else if (id == EXTRA_ID_BASE + 161) {
+        g_programmer.bit_keypad = 1;
+        g_programmer.popup = 0;
+    } else if (id == EXTRA_ID_BASE + 162 || id == EXTRA_ID_BASE + 163) {
+        int popup = id - (EXTRA_ID_BASE + 161);
         g_programmer.bit_keypad = 0;
         g_programmer.popup = g_programmer.popup == popup ? 0 : popup;
-    } else if (id == EXTRA_ID_BASE + 163) {
+    } else if (id == EXTRA_ID_BASE + 164) {
         if (g_programmer.bits == 64) g_programmer.bits = 32;
         else if (g_programmer.bits == 32) g_programmer.bits = 16;
         else if (g_programmer.bits == 16) g_programmer.bits = 8;
@@ -4258,8 +4375,23 @@ static void activate_converter(int id) {
     else if (index == 14) converter_decimal();
 }
 
+static void close_open_popup(void) {
+    g_scientific.popup = 0;
+    g_programmer.popup = 0;
+    g_date.calendar_target = 0;
+    g_date.amount_picker = 0;
+    g_converter.picker_open = 0;
+    g_converter.picker_search[0] = L'\0';
+    g_converter.picker_search_tick = 0;
+}
+
 void extras_activate(HWND owner, int id) {
     extras_clear_text_selection();
+    if (id == EXTRA_ID_DISMISS_POPUP) {
+        close_open_popup();
+        InvalidateRect(owner, NULL, FALSE);
+        return;
+    }
     if (g_mode == MODE_SCIENTIFIC) {
         if (id >= EXTRA_ID_BASE && id < EXTRA_ID_BASE + 35)
             activate_scientific(id - EXTRA_ID_BASE);

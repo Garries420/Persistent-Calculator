@@ -51,6 +51,7 @@
 #define ID_CHANGELOG_TAB_BASE 1100
 #define ID_NAV_MODE_BASE 1200
 #define ID_MODE_ICON_BASE 101
+#define IDR_CALCULATOR_FONT 200
 #define MAX_VISIBLE_HISTORY 32
 #define CHANGELOG_MAX_RELEASES 5
 
@@ -63,6 +64,7 @@ typedef struct HistoryEntry {
 typedef struct GridButton {
     const wchar_t *label;
     int kind;
+    int symbol;
 } GridButton;
 
 typedef struct SavedWindowPlacement {
@@ -82,15 +84,21 @@ typedef struct ChangelogRelease {
 } ChangelogRelease;
 
 static const GridButton g_buttons[24] = {
-    {L"%", 0}, {L"CE", 0}, {L"C", 0}, {L"⌫", 0},
-    {L"1/x", 0}, {L"x²", 0}, {L"²√x", 0}, {L"÷", 0},
-    {L"7", 1}, {L"8", 1}, {L"9", 1}, {L"×", 0},
-    {L"4", 1}, {L"5", 1}, {L"6", 1}, {L"−", 0},
-    {L"1", 1}, {L"2", 1}, {L"3", 1}, {L"+", 0},
-    {L"+/−", 1}, {L"0", 1}, {L",", 1}, {L"=", 2}
+    {L"\xE94C", 0, 1}, {L"CE", 0, 0}, {L"C", 0, 0}, {L"\xE94F", 0, 1},
+    {L"\xF7C9", 0, 1}, {L"\xF7C8", 0, 1}, {L"\xF899", 0, 1}, {L"\xE94A", 0, 1},
+    {L"7", 1, 0}, {L"8", 1, 0}, {L"9", 1, 0}, {L"\xE947", 0, 1},
+    {L"4", 1, 0}, {L"5", 1, 0}, {L"6", 1, 0}, {L"\xE949", 0, 1},
+    {L"1", 1, 0}, {L"2", 1, 0}, {L"3", 1, 0}, {L"\xE948", 0, 1},
+    {L"\xF898", 1, 1}, {L"0", 1, 0}, {L",", 1, 0}, {L"\xE94E", 2, 1}
 };
 
 static const wchar_t *g_memory_labels[6] = {L"MC", L"MR", L"M+", L"M−", L"MS", L"M⌄"};
+
+static const wchar_t *const g_changelog_201[] = {
+    L"Standard, Scientific, and Programmer now use Microsoft Calculator's original MIT-licensed Calculator Fluent Icons for their button symbols.",
+    L"Programmer now has separate Full keypad and Bit toggling keypad controls with clear hover labels.",
+    L"Open calendars, amount lists, and converter unit or currency pickers can now be dismissed by clicking anywhere outside them."
+};
 
 static const wchar_t *const g_changelog_200[] = {
     L"Added Scientific and Programmer calculators plus Date calculation.",
@@ -131,6 +139,7 @@ static const wchar_t *const g_changelog_100[] = {
 
 /* Keep this list newest-first and retain at most the latest five releases. */
 static const ChangelogRelease g_changelog_releases[] = {
+    {L"2.0.1", L"25 July 2026", g_changelog_201, (int)_countof(g_changelog_201)},
     {L"2.0.0", L"24 July 2026", g_changelog_200, (int)_countof(g_changelog_200)},
     {L"1.1.0", L"21 July 2026", g_changelog_110, (int)_countof(g_changelog_110)},
     {L"1.0.1", L"20 July 2026", g_changelog_101, (int)_countof(g_changelog_101)},
@@ -179,7 +188,9 @@ static HFONT g_font_title;
 static HFONT g_font_display;
 static HFONT g_font_display_small;
 static HFONT g_font_history_result;
+static HFONT g_font_symbols;
 static HICON g_mode_icons[MODE_COUNT];
+static HANDLE g_calculator_font;
 
 static COLORREF CLR_BACKGROUND = RGB(32, 32, 32);
 static COLORREF COLOR_PANEL = RGB(37, 37, 37);
@@ -205,6 +216,29 @@ static void load_mode_icons(HINSTANCE instance) {
         g_mode_icons[mode] = (HICON)LoadImageW(
             instance, MAKEINTRESOURCEW(ID_MODE_ICON_BASE + mode), IMAGE_ICON,
             32, 32, LR_DEFAULTCOLOR);
+    }
+}
+
+static void load_calculator_font(HINSTANCE instance) {
+    HRSRC resource = FindResourceW(instance, MAKEINTRESOURCEW(IDR_CALCULATOR_FONT),
+                                   RT_RCDATA);
+    HGLOBAL loaded;
+    void *data;
+    DWORD count = 0;
+    DWORD size;
+    if (!resource) return;
+    loaded = LoadResource(instance, resource);
+    if (!loaded) return;
+    data = LockResource(loaded);
+    size = SizeofResource(instance, resource);
+    if (!data || !size) return;
+    g_calculator_font = AddFontMemResourceEx(data, size, NULL, &count);
+}
+
+static void unload_calculator_font(void) {
+    if (g_calculator_font) {
+        RemoveFontMemResourceEx(g_calculator_font);
+        g_calculator_font = NULL;
     }
 }
 
@@ -287,14 +321,19 @@ static void save_window_placement(HWND window) {
     }
 }
 
-static HFONT create_font(int points, int weight) {
+static HFONT create_named_font(int points, int weight, const wchar_t *face) {
     LOGFONTW lf;
     memset(&lf, 0, sizeof(lf));
     lf.lfHeight = -MulDiv(points, (int)g_dpi, 72);
     lf.lfWeight = weight;
     lf.lfQuality = CLEARTYPE_QUALITY;
-    wcscpy(lf.lfFaceName, L"Segoe UI");
+    wcsncpy(lf.lfFaceName, face, _countof(lf.lfFaceName) - 1);
+    lf.lfFaceName[_countof(lf.lfFaceName) - 1] = L'\0';
     return CreateFontIndirectW(&lf);
+}
+
+static HFONT create_font(int points, int weight) {
+    return create_named_font(points, weight, L"Segoe UI");
 }
 
 static void destroy_fonts(void) {
@@ -305,8 +344,10 @@ static void destroy_fonts(void) {
     if (g_font_display) DeleteObject(g_font_display);
     if (g_font_display_small) DeleteObject(g_font_display_small);
     if (g_font_history_result) DeleteObject(g_font_history_result);
+    if (g_font_symbols) DeleteObject(g_font_symbols);
     g_font_normal = g_font_small = g_font_expression = g_font_title = NULL;
     g_font_display = g_font_display_small = g_font_history_result = NULL;
+    g_font_symbols = NULL;
 }
 
 static void create_fonts(void) {
@@ -318,6 +359,7 @@ static void create_fonts(void) {
     g_font_display = create_font(35, FW_SEMIBOLD);
     g_font_display_small = create_font(21, FW_SEMIBOLD);
     g_font_history_result = create_font(18, FW_SEMIBOLD);
+    g_font_symbols = create_named_font(15, FW_NORMAL, L"Calculator Fluent Icons");
 }
 
 static void fill_rect_color(HDC dc, const RECT *rect, COLORREF color) {
@@ -1070,7 +1112,9 @@ static void draw_grid_button(HDC dc, int index, int width, int height) {
     else if (id == g_hot_id) fill = COLOR_HOVER;
     if (id == g_pressed_id && g_buttons[index].kind == 2) fill = RGB(135, 186, 209);
     rounded_rect(dc, &rect, fill, scale_px(5));
-    draw_text_color(dc, g_buttons[index].label, rect, g_font_normal, text_color,
+    draw_text_color(dc, g_buttons[index].label, rect,
+                    g_buttons[index].symbol ? g_font_symbols : g_font_normal,
+                    text_color,
                     DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
@@ -2463,6 +2507,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
             updater_shutdown();
             destroy_fonts();
             destroy_mode_icons();
+            unload_calculator_font();
             PostQuitMessage(0);
             return 0;
     }
@@ -2489,6 +2534,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, wchar_t *command_lin
     if (updater_apply_if_requested()) return 0;
 
     SetProcessDPIAware();
+    load_calculator_font(instance);
     load_mode_icons(instance);
     calc_init(&g_calc);
     build_history_path();
