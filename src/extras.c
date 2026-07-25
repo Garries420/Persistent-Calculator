@@ -28,6 +28,7 @@
 #define EXTRA_PATH_CAPACITY 32768
 #define EXTRA_MAX_CURRENCIES 256
 #define EXTRA_MAX_PICKER_ROWS 8
+#define EXTRA_DATE_AMOUNT_PICKER_ROWS 8
 
 typedef struct UnitDef {
     const wchar_t *name;
@@ -106,6 +107,8 @@ typedef struct DateState {
     int calendar_year;
     int calendar_month;
     int calendar_level;
+    int amount_picker;
+    int amount_picker_scroll;
 } DateState;
 
 typedef struct ExtraTextSelection {
@@ -624,9 +627,12 @@ static const CurrencyOverride FRANKFURTER_CURRENCY_METADATA[] = {
 static const CurrencyOverride CURRENCY_OVERRIDES[] = {
     {L"AED", L"United Arab Emirates", L"Dirham", L"د.إ", 0},
     {L"AUD", L"Australia", L"Dollar", L"A$", 1},
+    {L"BAM", L"Bosnia and Herzegovina", L"Convertible Mark", L"КМ", 1},
     {L"BRL", L"Brazil", L"Real", L"R$", 1},
     {L"CAD", L"Canada", L"Dollar", L"C$", 1},
+    {L"CDF", L"DR Congo", L"Congolese Franc", L"Fr", 0},
     {L"CHF", L"Switzerland", L"Franc", L"CHF", 1},
+    {L"CNH", L"China (offshore)", L"Offshore Yuan", L"¥", 0},
     {L"CNY", L"China", L"Yuan", L"¥", 1},
     {L"CZK", L"Czech Republic", L"Koruna", L"Kč", 0},
     {L"DKK", L"Denmark", L"Krone", L"kr.", 0},
@@ -647,7 +653,9 @@ static const CurrencyOverride CURRENCY_OVERRIDES[] = {
     {L"PLN", L"Poland", L"Złoty", L"zł", 0},
     {L"RUB", L"Russia", L"Ruble", L"₽", 0},
     {L"SEK", L"Sweden", L"Krona", L"kr", 0},
+    {L"STN", L"São Tomé and Príncipe", L"Dobra", L"Db", 0},
     {L"THB", L"Thailand", L"Baht", L"฿", 1},
+    {L"TTD", L"Trinidad and Tobago", L"Dollar", L"$", 1},
     {L"TRY", L"Türkiye", L"Lira", L"₺", 1},
     {L"USD", L"United States", L"Dollar", L"$", 1},
     {L"VND", L"Vietnam", L"Đồng", L"₫", 0},
@@ -657,7 +665,7 @@ static const CurrencyOverride CURRENCY_OVERRIDES[] = {
     {L"XCD", L"East Caribbean", L"Dollar", L"EC$", 1},
     {L"XOF", L"West Africa", L"CFA Franc", L"CFA", 0},
     {L"XPD", L"International", L"Palladium (troy ounce)", L"oz t", 0},
-    {L"XPF", L"French overseas collectivities", L"Central Pacific Franc", L"₣", 0},
+    {L"XPF", L"French Pacific", L"CFP Franc", L"₣", 0},
     {L"XPT", L"International", L"Platinum (troy ounce)", L"oz t", 0},
     {L"ZAR", L"South Africa", L"Rand", L"R", 1}
 };
@@ -1696,6 +1704,7 @@ void extras_set_mode(HWND owner, ExtraMode mode) {
     g_scientific.popup = 0;
     g_programmer.popup = 0;
     g_date.calendar_target = 0;
+    g_date.amount_picker = 0;
     if (g_mode == MODE_CURRENCY) {
         if (!g_currency_loaded) load_currency_cache();
         count = g_currency_count;
@@ -2275,8 +2284,16 @@ static void format_date(const SYSTEMTIME *date, wchar_t *output, size_t capacity
     output[capacity - 1] = L'\0';
 }
 
-static RECT date_mode_rect(int width, UINT dpi) {
-    RECT rect = {sx(12, dpi), sx(61, dpi), width - sx(12, dpi), sx(105, dpi)};
+static RECT date_mode_rect(int add_mode, int width, UINT dpi) {
+    int margin = sx(10, dpi);
+    int gap = sx(5, dpi);
+    int available = width - margin * 2 - gap;
+    RECT rect = {
+        margin + add_mode * (available / 2 + gap),
+        sx(61, dpi),
+        margin + (add_mode + 1) * (available / 2) + add_mode * gap,
+        sx(99, dpi)
+    };
     return rect;
 }
 
@@ -2316,13 +2333,31 @@ static RECT date_amount_rect(int index, int width, UINT dpi) {
     return rect;
 }
 
-static RECT date_amount_step_rect(int index, int increment,
-                                  int width, UINT dpi) {
-    RECT rect = date_amount_rect(index, width, dpi);
-    if (increment)
-        rect.left = rect.right - sx(24, dpi);
-    else
-        rect.right = rect.left + sx(24, dpi);
+static RECT date_amount_picker_panel_rect(int width, int height, UINT dpi) {
+    RECT field = date_amount_rect(g_date.amount_picker - 1, width, dpi);
+    int desired_bottom = field.bottom +
+                         sx(EXTRA_DATE_AMOUNT_PICKER_ROWS * 32 + 4, dpi);
+    RECT rect = {
+        field.left,
+        field.bottom + sx(2, dpi),
+        field.right,
+        desired_bottom < height - sx(8, dpi)
+            ? desired_bottom : height - sx(8, dpi)
+    };
+    return rect;
+}
+
+static RECT date_amount_picker_row_rect(int row, int width, int height,
+                                        UINT dpi) {
+    RECT panel = date_amount_picker_panel_rect(width, height, dpi);
+    int rows = EXTRA_DATE_AMOUNT_PICKER_ROWS;
+    int available = panel.bottom - panel.top - sx(4, dpi);
+    RECT rect = {
+        panel.left + sx(2, dpi),
+        panel.top + sx(2, dpi) + available * row / rows,
+        panel.right - sx(2, dpi),
+        panel.top + sx(2, dpi) + available * (row + 1) / rows
+    };
     return rect;
 }
 
@@ -2595,27 +2630,47 @@ static void draw_date_calendar(HDC dc, int width, int height, UINT dpi,
     DeleteObject(normal);
 }
 
+static void draw_date_amount_picker(HDC dc, int width, int height, UINT dpi,
+                                    int hot_id, int pressed_id) {
+    RECT panel = date_amount_picker_panel_rect(width, height, dpi);
+    HFONT normal = extra_font(dpi, 11, FW_NORMAL);
+    int field = g_date.amount_picker - 1;
+    int selected = field == 0 ? g_date.add_years :
+                   field == 1 ? g_date.add_months : g_date.add_days;
+    int row;
+    round_color(dc, &panel, RGB(39, 44, 46), sx(6, dpi));
+    for (row = 0; row < EXTRA_DATE_AMOUNT_PICKER_ROWS; ++row) {
+        int amount = g_date.amount_picker_scroll + row;
+        int id = EXTRA_ID_BASE + 260 + row;
+        RECT rect = date_amount_picker_row_rect(row, width, height, dpi);
+        wchar_t text[8];
+        COLORREF fill = amount == selected ? RGB(73, 85, 90) :
+                        id == pressed_id ? RGB(78, 78, 78) :
+                        id == hot_id ? RGB(69, 69, 69) : RGB(43, 43, 43);
+        if (amount > 999) break;
+        round_color(dc, &rect, fill, sx(3, dpi));
+        _snwprintf(text, _countof(text), L"%d", amount);
+        text[_countof(text) - 1] = L'\0';
+        text_color(dc, text, rect, normal, RGB(246, 246, 246),
+                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    DeleteObject(normal);
+}
+
 static void draw_date(HDC dc, int width, int height, UINT dpi,
                       int hot_id, int pressed_id) {
     HFONT normal = extra_font(dpi, 11, FW_NORMAL);
     HFONT small_font = extra_font(dpi, 9, FW_NORMAL);
     int index;
-    {
-        int id = EXTRA_ID_BASE + 200;
-        RECT rect = date_mode_rect(width, dpi);
-        RECT text = rect;
-        COLORREF fill = id == pressed_id ? RGB(58, 58, 58) :
-                        id == hot_id ? RGB(48, 48, 48) : RGB(31, 31, 31);
+    for (index = 0; index < 2; ++index) {
+        int id = EXTRA_ID_BASE + 200 + index;
+        RECT rect = date_mode_rect(index, width, dpi);
+        COLORREF fill = g_date.add_mode == index ? RGB(73, 85, 90) :
+                        id == pressed_id ? RGB(78, 78, 78) :
+                        id == hot_id ? RGB(69, 69, 69) : RGB(50, 50, 50);
         round_color(dc, &rect, fill, sx(4, dpi));
-        text.left += sx(6, dpi);
-        text.right -= sx(28, dpi);
-        text_color(dc, g_date.add_mode ? L"Add or subtract days"
-                                      : L"Difference between dates",
-                   text, normal, RGB(246, 246, 246),
-                   DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        text.left = text.right;
-        text.right = rect.right - sx(4, dpi);
-        text_color(dc, L"⌄", text, normal, RGB(190, 194, 195),
+        text_color(dc, index ? L"Add or subtract" : L"Difference",
+                   rect, normal, RGB(246, 246, 246),
                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     {
@@ -2689,34 +2744,24 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
         for (index = 0; index < 3; ++index) {
             RECT rect = date_amount_rect(index, width, dpi);
             RECT label = {rect.left, sx(247, dpi), rect.right, sx(275, dpi)};
-            RECT decrement = date_amount_step_rect(index, 0, width, dpi);
-            RECT increment = date_amount_step_rect(index, 1, width, dpi);
             RECT value = rect;
+            RECT chevron = rect;
             wchar_t number[24];
-            int decrement_id = EXTRA_ID_BASE + 242 + index * 2;
-            int increment_id = decrement_id + 1;
-            round_color(dc, &rect, RGB(50, 50, 50), sx(4, dpi));
-            if (decrement_id == hot_id || decrement_id == pressed_id)
-                round_color(dc, &decrement,
-                            decrement_id == pressed_id
-                                ? RGB(78, 78, 78) : RGB(69, 69, 69),
-                            sx(4, dpi));
-            if (increment_id == hot_id || increment_id == pressed_id)
-                round_color(dc, &increment,
-                            increment_id == pressed_id
-                                ? RGB(78, 78, 78) : RGB(69, 69, 69),
-                            sx(4, dpi));
+            int id = EXTRA_ID_BASE + 242 + index;
+            COLORREF fill = id == pressed_id ? RGB(78, 78, 78) :
+                            id == hot_id ? RGB(69, 69, 69) : RGB(50, 50, 50);
+            if (g_date.amount_picker == index + 1) fill = RGB(73, 85, 90);
+            round_color(dc, &rect, fill, sx(4, dpi));
             text_color(dc, amount_labels[index], label, small_font,
                        RGB(190, 194, 195),
                        DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-            text_color(dc, L"−", decrement, normal, RGB(246, 246, 246),
-                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            text_color(dc, L"+", increment, normal, RGB(246, 246, 246),
-                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            value.left = decrement.right;
-            value.right = increment.left;
+            value.left += sx(10, dpi);
+            value.right -= sx(24, dpi);
+            chevron.left = chevron.right - sx(24, dpi);
             _snwprintf(number, _countof(number), L"%d", values[index]);
             text_color(dc, number, value, normal, RGB(246, 246, 246),
+                       DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            text_color(dc, L"⌄", chevron, normal, RGB(190, 194, 195),
                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
         text_color(dc, L"Date", date_label, small_font, RGB(170, 175, 176),
@@ -2726,6 +2771,8 @@ static void draw_date(HDC dc, int width, int height, UINT dpi,
     }
     if (g_date.calendar_target)
         draw_date_calendar(dc, width, height, dpi, hot_id, pressed_id);
+    if (g_date.amount_picker)
+        draw_date_amount_picker(dc, width, height, dpi, hot_id, pressed_id);
     DeleteObject(small_font);
     DeleteObject(normal);
 }
@@ -2812,22 +2859,86 @@ static int text_contains_case_insensitive(const wchar_t *text,
     return 0;
 }
 
+int extras_unit_matches_search(ExtraMode mode, int index,
+                               const wchar_t *search) {
+    int count;
+    const UnitDef *table = unit_table(mode, &count);
+    if (!table || index < 0 || index >= count || !search || !*search)
+        return 0;
+    return text_contains_case_insensitive(table[index].name, search) ||
+           text_contains_case_insensitive(table[index].symbol, search);
+}
+
 static int picker_item_matches(int index, const wchar_t *search, int prefix_only) {
+    int metadata_index;
     if (index < 0 || index >= extras_unit_count(g_mode) || !search || !*search)
         return 0;
     if (g_mode == MODE_CURRENCY) {
         const CurrencyRate *currency = &g_currency[index];
         if (prefix_only) {
-            return text_starts_with_case_insensitive(currency->location, search) ||
-                   text_starts_with_case_insensitive(currency->name, search) ||
-                   text_starts_with_case_insensitive(currency->code, search);
+            if (text_starts_with_case_insensitive(currency->location, search) ||
+                text_starts_with_case_insensitive(currency->name, search) ||
+                text_starts_with_case_insensitive(currency->code, search))
+                return 1;
+        } else if (text_contains_case_insensitive(currency->label, search) ||
+                   text_contains_case_insensitive(currency->code, search)) {
+            return 1;
         }
-        return text_contains_case_insensitive(currency->label, search) ||
-               text_contains_case_insensitive(currency->code, search);
+        for (metadata_index = 0;
+             metadata_index < (int)_countof(FRANKFURTER_CURRENCY_METADATA);
+             ++metadata_index) {
+            const CurrencyOverride *metadata =
+                &FRANKFURTER_CURRENCY_METADATA[metadata_index];
+            if (_wcsicmp(metadata->code, currency->code) != 0) continue;
+            return prefix_only
+                       ? text_starts_with_case_insensitive(metadata->location, search) ||
+                             text_starts_with_case_insensitive(metadata->name, search)
+                       : text_contains_case_insensitive(metadata->location, search) ||
+                             text_contains_case_insensitive(metadata->name, search);
+        }
+        return 0;
     }
     return prefix_only
                ? text_starts_with_case_insensitive(extras_unit_name(g_mode, index), search)
-               : text_contains_case_insensitive(extras_unit_name(g_mode, index), search);
+               : extras_unit_matches_search(g_mode, index, search);
+}
+
+static int picker_uses_elimination_filter(void) {
+    return g_mode == MODE_CURRENCY ||
+           g_mode == MODE_VOLUME ||
+           g_mode == MODE_LENGTH ||
+           g_mode == MODE_WEIGHT ||
+           g_mode == MODE_ENERGY ||
+           g_mode == MODE_AREA ||
+           g_mode == MODE_TIME ||
+           g_mode == MODE_DATA;
+}
+
+static int picker_filtered_count(void) {
+    int count = extras_unit_count(g_mode);
+    int matches = 0;
+    int index;
+    if (!picker_uses_elimination_filter() || !g_converter.picker_search[0])
+        return count;
+    for (index = 0; index < count; ++index)
+        if (picker_item_matches(index, g_converter.picker_search, 0))
+            ++matches;
+    return matches;
+}
+
+static int picker_actual_index(int filtered_index) {
+    int count = extras_unit_count(g_mode);
+    int seen = 0;
+    int index;
+    if (filtered_index < 0) return -1;
+    if (!picker_uses_elimination_filter() || !g_converter.picker_search[0])
+        return filtered_index < count ? filtered_index : -1;
+    for (index = 0; index < count; ++index) {
+        if (!picker_item_matches(index, g_converter.picker_search, 0)) continue;
+        if (seen == filtered_index) return index;
+        ++seen;
+    }
+    return -1;
 }
 
 static void picker_jump_to_search(void) {
@@ -2836,6 +2947,10 @@ static void picker_jump_to_search(void) {
     int index;
     int match = -1;
     if (!g_converter.picker_search[0]) return;
+    if (picker_uses_elimination_filter()) {
+        g_converter.picker_scroll = 0;
+        return;
+    }
     for (index = 0; index < count; ++index) {
         if (picker_item_matches(index, g_converter.picker_search, 1)) {
             match = index;
@@ -2860,10 +2975,10 @@ static void picker_jump_to_search(void) {
 
 static void draw_converter_picker(HDC dc, int width, int height, UINT dpi,
                                   int hot_id, int pressed_id) {
-    int count = extras_unit_count(g_mode);
+    int count = picker_filtered_count();
     int visible = count < EXTRA_MAX_PICKER_ROWS ? count : EXTRA_MAX_PICKER_ROWS;
     int row_height = sx(45, dpi);
-    int panel_height = visible * row_height + sx(58, dpi);
+    int panel_height = (visible ? visible : 1) * row_height + sx(58, dpi);
     int top = sx(76, dpi);
     int index;
     RECT panel = {sx(9, dpi), top, width - sx(9, dpi),
@@ -2877,12 +2992,15 @@ static void draw_converter_picker(HDC dc, int width, int height, UINT dpi,
                         panel.right - sx(12, dpi), panel.top + sx(48, dpi)};
         wchar_t heading_text[128];
         if (g_converter.picker_search[0]) {
-            _snwprintf(heading_text, _countof(heading_text), L"%ls  ·  Type to jump: %ls",
+            _snwprintf(heading_text, _countof(heading_text), L"%ls  ·  %ls: %ls",
                        g_converter.picker_target ? L"Convert to" : L"Convert from",
+                       picker_uses_elimination_filter() ? L"Filter" : L"Type to jump",
                        g_converter.picker_search);
         } else {
-            _snwprintf(heading_text, _countof(heading_text), L"%ls  ·  Type to jump",
-                       g_converter.picker_target ? L"Convert to" : L"Convert from");
+            _snwprintf(heading_text, _countof(heading_text), L"%ls  ·  %ls",
+                       g_converter.picker_target ? L"Convert to" : L"Convert from",
+                       picker_uses_elimination_filter() ? L"Type to filter"
+                                                       : L"Type to jump");
         }
         heading_text[_countof(heading_text) - 1] = L'\0';
         fit_text(dc, heading_text, heading, dpi, 10, 7, FW_NORMAL,
@@ -2892,14 +3010,17 @@ static void draw_converter_picker(HDC dc, int width, int height, UINT dpi,
     if (!count) {
         RECT empty = {panel.left + sx(12, dpi), panel.top + sx(55, dpi),
                       panel.right - sx(12, dpi), panel.bottom - sx(12, dpi)};
-        text_color(dc, L"Currency rates aren't available yet.", empty, normal,
+        const wchar_t *message = g_converter.picker_search[0]
+                                     ? L"No matching units."
+                                     : L"Currency rates aren't available yet.";
+        text_color(dc, message, empty, normal,
                    RGB(170, 175, 176), DT_LEFT | DT_TOP | DT_WORDBREAK);
     }
     if (g_converter.picker_scroll < 0) g_converter.picker_scroll = 0;
     if (g_converter.picker_scroll > count - visible)
         g_converter.picker_scroll = count > visible ? count - visible : 0;
     for (index = 0; index < visible; ++index) {
-        int actual = g_converter.picker_scroll + index;
+        int actual = picker_actual_index(g_converter.picker_scroll + index);
         int id = EXTRA_ID_BASE + 500 + index;
         wchar_t label[128];
         RECT row = {panel.left + sx(5, dpi), panel.top + sx(48, dpi) + index * row_height,
@@ -2912,6 +3033,7 @@ static void draw_converter_picker(HDC dc, int width, int height, UINT dpi,
                            : g_converter.from_index[g_mode];
         if (actual == selected) fill = RGB(73, 85, 90);
         round_color(dc, &row, fill, sx(4, dpi));
+        if (actual < 0) continue;
         if (g_mode == MODE_CURRENCY) {
             _snwprintf(label, _countof(label), L"%ls   (%ls)",
                        g_currency[actual].label, g_currency[actual].code);
@@ -3762,8 +3884,15 @@ int extras_hit_test(int x, int y, int width, int height, UINT dpi) {
                     return EXTRA_ID_BASE + 222 + index;
             return -1;
         }
-        if (inside(date_mode_rect(width, dpi), x, y))
-            return EXTRA_ID_BASE + 200;
+        if (g_date.amount_picker) {
+            for (index = 0; index < EXTRA_DATE_AMOUNT_PICKER_ROWS; ++index)
+                if (inside(date_amount_picker_row_rect(index, width, height, dpi),
+                           x, y))
+                    return EXTRA_ID_BASE + 260 + index;
+        }
+        for (index = 0; index < 2; ++index)
+            if (inside(date_mode_rect(index, width, dpi), x, y))
+                return EXTRA_ID_BASE + 200 + index;
         if (inside(date_field_rect(0, width, dpi), x, y))
             return EXTRA_ID_BASE + 210;
         if (!g_date.add_mode &&
@@ -3773,16 +3902,13 @@ int extras_hit_test(int x, int y, int width, int height, UINT dpi) {
             for (index = 0; index < 2; ++index)
                 if (inside(date_radio_rect(index, width, dpi), x, y))
                     return EXTRA_ID_BASE + 240 + index;
-            for (index = 0; index < 3; ++index) {
-                if (inside(date_amount_step_rect(index, 0, width, dpi), x, y))
-                    return EXTRA_ID_BASE + 242 + index * 2;
-                if (inside(date_amount_step_rect(index, 1, width, dpi), x, y))
-                    return EXTRA_ID_BASE + 243 + index * 2;
-            }
+            for (index = 0; index < 3; ++index)
+                if (inside(date_amount_rect(index, width, dpi), x, y))
+                    return EXTRA_ID_BASE + 242 + index;
         }
     } else if (g_mode >= MODE_CURRENCY) {
         if (g_converter.picker_open) {
-            int count = extras_unit_count(g_mode);
+            int count = picker_filtered_count();
             int visible = count < EXTRA_MAX_PICKER_ROWS ? count : EXTRA_MAX_PICKER_ROWS;
             int row_height = sx(45, dpi);
             RECT panel = {sx(9, dpi), sx(76, dpi), width - sx(9, dpi), height - sx(8, dpi)};
@@ -3949,11 +4075,28 @@ static void activate_programmer_control(int id) {
 }
 
 static void activate_date(int id) {
-    if (id == EXTRA_ID_BASE + 200) {
-        g_date.add_mode = !g_date.add_mode;
-        g_date.calendar_target = 0;
+    if (g_date.amount_picker &&
+        id >= EXTRA_ID_BASE + 260 &&
+        id < EXTRA_ID_BASE + 260 + EXTRA_DATE_AMOUNT_PICKER_ROWS) {
+        int field = g_date.amount_picker - 1;
+        int value = g_date.amount_picker_scroll +
+                    id - (EXTRA_ID_BASE + 260);
+        int *target = field == 0 ? &g_date.add_years :
+                      field == 1 ? &g_date.add_months : &g_date.add_days;
+        if (value > 999) value = 999;
+        *target = value;
+        g_date.amount_picker = 0;
         return;
     }
+    if (id == EXTRA_ID_BASE + 200 || id == EXTRA_ID_BASE + 201) {
+        g_date.add_mode = id == EXTRA_ID_BASE + 201;
+        g_date.calendar_target = 0;
+        g_date.amount_picker = 0;
+        return;
+    }
+    if (g_date.amount_picker &&
+        !(id >= EXTRA_ID_BASE + 242 && id <= EXTRA_ID_BASE + 244))
+        g_date.amount_picker = 0;
     if (g_date.calendar_target) {
         if (id == EXTRA_ID_BASE + 219) {
             if (g_date.calendar_level < 2) ++g_date.calendar_level;
@@ -4009,19 +4152,19 @@ static void activate_date(int id) {
         g_date.calendar_year = selected->wYear;
         g_date.calendar_month = selected->wMonth;
         g_date.calendar_level = 0;
+        g_date.amount_picker = 0;
     } else if (id == EXTRA_ID_BASE + 240 ||
                id == EXTRA_ID_BASE + 241) {
         g_date.subtract = id == EXTRA_ID_BASE + 241;
-    } else if (id >= EXTRA_ID_BASE + 242 && id <= EXTRA_ID_BASE + 247) {
-        int field = (id - (EXTRA_ID_BASE + 242)) / 2;
-        int increment = (id - (EXTRA_ID_BASE + 242)) % 2;
-        int *value = field == 0 ? &g_date.add_years :
-                     field == 1 ? &g_date.add_months : &g_date.add_days;
-        if (increment) {
-            if (*value < 9999) ++*value;
-        } else if (*value > 0) {
-            --*value;
-        }
+    } else if (id >= EXTRA_ID_BASE + 242 && id <= EXTRA_ID_BASE + 244) {
+        int field = id - (EXTRA_ID_BASE + 242);
+        int value = field == 0 ? g_date.add_years :
+                    field == 1 ? g_date.add_months : g_date.add_days;
+        int maximum = 1000 - EXTRA_DATE_AMOUNT_PICKER_ROWS;
+        g_date.amount_picker = field + 1;
+        g_date.amount_picker_scroll = value;
+        if (g_date.amount_picker_scroll > maximum)
+            g_date.amount_picker_scroll = maximum;
     }
 }
 
@@ -4087,8 +4230,9 @@ static void activate_converter(int id) {
         return;
     }
     if (id >= EXTRA_ID_BASE + 500 && id < EXTRA_ID_BASE + 500 + EXTRA_MAX_PICKER_ROWS) {
-        index = g_converter.picker_scroll + id - (EXTRA_ID_BASE + 500);
-        if (index < extras_unit_count(g_mode)) {
+        index = picker_actual_index(
+            g_converter.picker_scroll + id - (EXTRA_ID_BASE + 500));
+        if (index >= 0 && index < extras_unit_count(g_mode)) {
             if (g_converter.picker_target) g_converter.to_index[g_mode] = index;
             else g_converter.from_index[g_mode] = index;
         }
@@ -4135,22 +4279,63 @@ void extras_activate(HWND owner, int id) {
 void extras_mouse_wheel(HWND owner, int wheel_steps) {
     int count;
     int maximum;
+    if (g_mode == MODE_DATE && g_date.amount_picker) {
+        maximum = 1000 - EXTRA_DATE_AMOUNT_PICKER_ROWS;
+        g_date.amount_picker_scroll -= wheel_steps * 3;
+        if (g_date.amount_picker_scroll < 0) g_date.amount_picker_scroll = 0;
+        if (g_date.amount_picker_scroll > maximum)
+            g_date.amount_picker_scroll = maximum;
+        InvalidateRect(owner, NULL, FALSE);
+        return;
+    }
     if (g_mode < MODE_CURRENCY || !g_converter.picker_open) return;
-    count = extras_unit_count(g_mode);
+    count = picker_filtered_count();
     maximum = count > EXTRA_MAX_PICKER_ROWS ? count - EXTRA_MAX_PICKER_ROWS : 0;
     g_converter.picker_scroll -= wheel_steps * 2;
-    g_converter.picker_search[0] = L'\0';
-    g_converter.picker_search_tick = 0;
+    if (!picker_uses_elimination_filter()) {
+        g_converter.picker_search[0] = L'\0';
+        g_converter.picker_search_tick = 0;
+    }
     if (g_converter.picker_scroll < 0) g_converter.picker_scroll = 0;
     if (g_converter.picker_scroll > maximum) g_converter.picker_scroll = maximum;
     InvalidateRect(owner, NULL, FALSE);
 }
 
 void extras_key_down(HWND owner, WPARAM key) {
+    if (g_mode == MODE_DATE && g_date.amount_picker &&
+        (key == VK_UP || key == VK_DOWN || key == VK_HOME ||
+         key == VK_END || key == VK_PRIOR || key == VK_NEXT ||
+         key == VK_RETURN)) {
+        int maximum = 1000 - EXTRA_DATE_AMOUNT_PICKER_ROWS;
+        if (key == VK_UP && g_date.amount_picker_scroll > 0)
+            --g_date.amount_picker_scroll;
+        else if (key == VK_DOWN && g_date.amount_picker_scroll < maximum)
+            ++g_date.amount_picker_scroll;
+        else if (key == VK_HOME)
+            g_date.amount_picker_scroll = 0;
+        else if (key == VK_END)
+            g_date.amount_picker_scroll = maximum;
+        else if (key == VK_PRIOR) {
+            g_date.amount_picker_scroll -= EXTRA_DATE_AMOUNT_PICKER_ROWS;
+            if (g_date.amount_picker_scroll < 0) g_date.amount_picker_scroll = 0;
+        } else if (key == VK_NEXT) {
+            g_date.amount_picker_scroll += EXTRA_DATE_AMOUNT_PICKER_ROWS;
+            if (g_date.amount_picker_scroll > maximum)
+                g_date.amount_picker_scroll = maximum;
+        } else if (key == VK_RETURN) {
+            int field = g_date.amount_picker - 1;
+            int *target = field == 0 ? &g_date.add_years :
+                          field == 1 ? &g_date.add_months : &g_date.add_days;
+            *target = g_date.amount_picker_scroll;
+            g_date.amount_picker = 0;
+        }
+        InvalidateRect(owner, NULL, FALSE);
+        return;
+    }
     if (g_converter.picker_open &&
         (key == VK_UP || key == VK_DOWN || key == VK_HOME ||
          key == VK_END || key == VK_RETURN)) {
-        int count = extras_unit_count(g_mode);
+        int count = picker_filtered_count();
         int maximum = count > EXTRA_MAX_PICKER_ROWS
                           ? count - EXTRA_MAX_PICKER_ROWS : 0;
         if (key == VK_UP && g_converter.picker_scroll > 0)
@@ -4162,14 +4347,14 @@ void extras_key_down(HWND owner, WPARAM key) {
         else if (key == VK_END)
             g_converter.picker_scroll = maximum;
         else if (key == VK_RETURN && count > 0) {
-            int selected = g_converter.picker_scroll;
+            int selected = picker_actual_index(g_converter.picker_scroll);
             if (g_converter.picker_target)
                 g_converter.to_index[g_mode] = selected;
             else
                 g_converter.from_index[g_mode] = selected;
             g_converter.picker_open = 0;
         }
-        if (key != VK_RETURN) {
+        if (key != VK_RETURN && !picker_uses_elimination_filter()) {
             g_converter.picker_search[0] = L'\0';
             g_converter.picker_search_tick = 0;
         }
@@ -4186,6 +4371,8 @@ void extras_key_down(HWND owner, WPARAM key) {
         }
         else if (g_mode == MODE_DATE && g_date.calendar_target)
             g_date.calendar_target = 0;
+        else if (g_mode == MODE_DATE && g_date.amount_picker)
+            g_date.amount_picker = 0;
         else if (g_mode == MODE_SCIENTIFIC && g_scientific.popup)
             g_scientific.popup = 0;
         else if (g_mode == MODE_PROGRAMMER && g_programmer.popup)
@@ -4199,7 +4386,8 @@ void extras_key_down(HWND owner, WPARAM key) {
                 g_converter.picker_search[length - 1] = L'\0';
                 picker_jump_to_search();
             }
-            g_converter.picker_search_tick = GetTickCount64();
+            g_converter.picker_search_tick =
+                picker_uses_elimination_filter() ? 0 : GetTickCount64();
         } else if (g_mode == MODE_SCIENTIFIC) scientific_backspace();
         else if (g_mode == MODE_PROGRAMMER)
             g_programmer.value /= (uint64_t)g_programmer.base;
@@ -4234,7 +4422,8 @@ void extras_character(HWND owner, wchar_t character) {
         if (iswalnum(character) || character == L' ' || character == L'-') {
             ULONGLONG now = GetTickCount64();
             size_t length;
-            if (g_converter.picker_search_tick &&
+            if (!picker_uses_elimination_filter() &&
+                g_converter.picker_search_tick &&
                 now - g_converter.picker_search_tick > 1500)
                 g_converter.picker_search[0] = L'\0';
             length = wcslen(g_converter.picker_search);
@@ -4243,7 +4432,8 @@ void extras_character(HWND owner, wchar_t character) {
                 g_converter.picker_search[length + 1] = L'\0';
                 picker_jump_to_search();
             }
-            g_converter.picker_search_tick = now;
+            g_converter.picker_search_tick =
+                picker_uses_elimination_filter() ? 0 : now;
         }
         InvalidateRect(owner, NULL, FALSE);
         return;
