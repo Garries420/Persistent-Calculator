@@ -61,34 +61,13 @@ namespace CalculatorUITestFramework
         }
 
         /// <summary>
-        /// If the the Dock Panel for the History and Memory lists is not displayed, resize the window
-        /// Two attempts are made, the the lable is not found a "not found" exception is thrown
+        /// Positions the calculator for tests that historically used the removed
+        /// docked History and Memory panel.
         /// </summary>
         public static void ResizeWindowToDisplayMemoryHistoryDockPanel()
         {
             // Put the calculator in the upper left region of the screen
             CalculatorDriver.Instance.CalculatorSession.Manage().Window.Position = new Point(8, 8);
-            GrowWindowToShowDock(CalculatorDriver.Instance.CalculatorSession.Manage().Window.Size.Width);
-        }
-
-        /// <summary>
-        /// Increases the size of the window until Dock Panel for the History/Memory panel is visible
-        /// </summary>
-        private static void GrowWindowToShowDock(int width)
-        {
-            if (width > 2100)
-            {
-                throw new NotFoundException("Could not the Dock Panel for the History and Memory lists");
-            }
-
-            if (!session.PageSource.Contains("DockPanel"))
-            {
-                var height = CalculatorDriver.Instance.CalculatorSession.Manage().Window.Size.Height;
-                CalculatorDriver.Instance.CalculatorSession.Manage().Window.Size = new Size(width, height);
-                //give window time to render new size
-                System.Threading.Thread.Sleep(10);
-                GrowWindowToShowDock(width + 100);
-            }
         }
     }
 

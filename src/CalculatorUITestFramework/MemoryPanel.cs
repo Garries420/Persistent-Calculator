@@ -26,19 +26,17 @@ namespace CalculatorUITestFramework
 
         private WindowsDriver<WindowsElement> session => CalculatorDriver.Instance.CalculatorSession;
         private WindowsElement MemoryPane => session.TryFindElementByAccessibilityId("MemoryPanel");
-        private WindowsElement MemoryLabel => session.TryFindElementByAccessibilityId("MemoryLabel");
         private WindowsElement MemoryListView => session.TryFindElementByAccessibilityId("MemoryListView");
         private WindowsElement MemoryPaneEmptyLabel => session.TryFindElementByAccessibilityId("MemoryPaneEmpty");
         private WindowsElement MemoryFlyout => session.TryFindElementByAccessibilityId("MemoryFlyout");
 
         /// <summary>
-        /// Opens the Memory Pane by clicking the Memory pivot label.
+        /// Opens the Memory list through the compact flyout. The legacy docked
+        /// Memory pivot is intentionally absent from Persistent Calculator.
         /// </summary>
         public void OpenMemoryPanel()
         {
-            ResizeWindowToDisplayMemoryLabel();
-            MemoryLabel.Click();
-            MemoryPane.WaitForDisplayed();
+            OpenMemoryFlyout();
         }
 
         /// <summary>
@@ -56,11 +54,11 @@ namespace CalculatorUITestFramework
         /// </summary>
         public void ClearMemoryPanel()
         {
-            MemoryLabel.Click();
+            OpenMemoryFlyout();
 
             try
             {
-                if (session.PageSource.Contains("ClearMemoryButton"))
+                if (PanelClearMemoryButton != null)
                 {
                     PanelClearMemoryButton.Click();
                 }
@@ -81,14 +79,11 @@ namespace CalculatorUITestFramework
         }
 
         /// <summary>
-        /// If the Memory label is not displayed, resize the window
-        /// Two attempts are made, and if the label is not found, a "not found" exception is thrown
+        /// Keeps older tests on the supported compact Memory-button path.
         /// </summary>
         public void ResizeWindowToDisplayMemoryLabel()
         {
-            // Put the calculator in the upper left region of the screen
-            CalculatorDriver.Instance.CalculatorSession.Manage().Window.Position = new Point(8, 8);
-            GrowWindowToShowMemoryLabel(CalculatorDriver.Instance.CalculatorSession.Manage().Window.Size.Width);
+            ResizeWindowToDisplayMemoryButton();
         }
 
         /// <summary>
@@ -125,26 +120,6 @@ namespace CalculatorUITestFramework
         {
             OpenMemoryFlyout();
             return (from item in MemoryListView.FindElementsByClassName("ListViewItem") select new MemoryItem(item)).ToList();
-        }
-
-        /// <summary>
-        /// Increases the size of the window until Memory label for the Memory panel is visible
-        /// </summary>
-        private void GrowWindowToShowMemoryLabel(int width)
-        {
-            if (width > 2100)
-            {
-                throw new NotFoundException("Could not the Memory Label");
-            }
-
-            if (!session.PageSource.Contains("MemoryLabel"))
-            {
-                var height = CalculatorDriver.Instance.CalculatorSession.Manage().Window.Size.Height;
-                CalculatorDriver.Instance.CalculatorSession.Manage().Window.Size = new Size(width, height);
-                //give window time to render new size
-                System.Threading.Thread.Sleep(10);
-                GrowWindowToShowMemoryLabel(width + 100);
-            }
         }
 
         /// <summary>
