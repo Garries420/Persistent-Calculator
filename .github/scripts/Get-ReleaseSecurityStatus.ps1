@@ -204,18 +204,19 @@ function Convert-KasperskyReportToStatus($Report) {
         return $null
     }
 
+    $publicReportUrl = "https://opentip.kaspersky.com/$sha256/"
     $zone = ([string](Get-PropertyValue $Report @('Zone', 'zone'))).Trim()
     $fileStatus = ([string](Get-PropertyValue $Report @('FileStatus', 'fileStatus'))).Trim()
     # OpenTIP defines the Green zone itself as Clean or No threats detected.
     # The FileStatus field is not present in every otherwise complete response.
     if ($zone -eq 'Green' -or $fileStatus -in @('Clean', 'No threats detected')) {
-        return [pscustomobject]@{ Text = 'Kaspersky OpenTIP: Clean'; Url = ''; Complete = $true }
+        return [pscustomobject]@{ Text = 'Kaspersky OpenTIP: Clean'; Url = $publicReportUrl; Complete = $true }
     }
     if ($zone -eq 'Red' -or $fileStatus -eq 'Malware') {
-        return [pscustomobject]@{ Text = 'Kaspersky OpenTIP: Malware'; Url = ''; Complete = $true }
+        return [pscustomobject]@{ Text = 'Kaspersky OpenTIP: Malware'; Url = $publicReportUrl; Complete = $true }
     }
     if ($zone -eq 'Yellow' -or $fileStatus -eq 'Adware and other') {
-        return [pscustomobject]@{ Text = 'Kaspersky OpenTIP: Adware and other'; Url = ''; Complete = $true }
+        return [pscustomobject]@{ Text = 'Kaspersky OpenTIP: Adware and other'; Url = $publicReportUrl; Complete = $true }
     }
     return $null
 }

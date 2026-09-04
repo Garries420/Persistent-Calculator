@@ -5,7 +5,7 @@
   <a href="https://github.com/Garries420/Persistent-Calculator/releases/latest"><img src="https://img.shields.io/badge/release-v1.0-7c4dff" alt="release v1.0"></a>
   <img src="https://img.shields.io/badge/platform-Windows-1674ea" alt="platform Windows">
   <a href="https://www.virustotal.com/gui/file/abfcb7c7751ef54182510e4be68cfe485542134a74a0d8a2fc31c152b4076d83/detection"><img src="https://img.shields.io/badge/VirusTotal-2%2F69-394eff" alt="VirusTotal 2/69"></a>
-  <img src="https://img.shields.io/badge/Kaspersky%20OpenTIP-Clean-00a88e" alt="Kaspersky OpenTIP Clean">
+  <a href="https://opentip.kaspersky.com/abfcb7c7751ef54182510e4be68cfe485542134a74a0d8a2fc31c152b4076d83/"><img src="https://img.shields.io/badge/Kaspersky%20OpenTIP-Clean-00a88e" alt="Kaspersky OpenTIP Clean"></a>
 <!-- security-status:end -->
 </div>
 
