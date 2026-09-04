@@ -206,7 +206,9 @@ function Convert-KasperskyReportToStatus($Report) {
 
     $zone = ([string](Get-PropertyValue $Report @('Zone', 'zone'))).Trim()
     $fileStatus = ([string](Get-PropertyValue $Report @('FileStatus', 'fileStatus'))).Trim()
-    if ($zone -eq 'Green' -and $fileStatus -in @('Clean', 'No threats detected')) {
+    # OpenTIP defines the Green zone itself as Clean or No threats detected.
+    # The FileStatus field is not present in every otherwise complete response.
+    if ($zone -eq 'Green' -or $fileStatus -in @('Clean', 'No threats detected')) {
         return [pscustomobject]@{ Text = 'Kaspersky OpenTIP: Clean'; Url = ''; Complete = $true }
     }
     if ($zone -eq 'Red' -or $fileStatus -eq 'Malware') {
@@ -262,6 +264,13 @@ function Wait-KasperskyAnalysis([hashtable]$Headers, [int]$TimeoutMinutes) {
         $analysisState = ([string](Get-PropertyValue $result.Body @('Status', 'status'))).Trim().ToLowerInvariant()
         if ($analysisState -eq 'complete') {
             $status = Convert-KasperskyReportToStatus $result.Body
+            if ($null -ne $status) {
+                return $status
+            }
+            # The sandbox result can finish before all reputation fields appear
+            # in this response. Re-read the exact hash reputation once before
+            # reporting an unknown verdict.
+            $status = Get-KasperskyHashReport $Headers
             if ($null -ne $status) {
                 return $status
             }
