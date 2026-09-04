@@ -6,9 +6,9 @@
   &nbsp;&middot;&nbsp;
   <img src="https://img.shields.io/badge/platform-Windows-1674ea" alt="platform Windows">
   &nbsp;&middot;&nbsp;
-  <a href="https://www.virustotal.com/gui/file/abfcb7c7751ef54182510e4be68cfe485542134a74a0d8a2fc31c152b4076d83/detection"><img src="docs/Images/virustotal-shield.svg" alt="" width="15" height="15" align="absmiddle"> VirusTotal Pending</a>
+  <a href="https://www.virustotal.com/gui/file/abfcb7c7751ef54182510e4be68cfe485542134a74a0d8a2fc31c152b4076d83/detection"><img src="docs/Images/virustotal-shield.svg" alt="" width="15" height="15" align="absmiddle"> VirusTotal 2/69</a>
   &nbsp;&middot;&nbsp;
-  <span><img src="docs/Images/kaspersky-shield.svg" alt="" width="15" height="15" align="absmiddle"> Kaspersky OpenTIP: Pending</span>
+  <span><img src="docs/Images/kaspersky-shield.svg" alt="" width="15" height="15" align="absmiddle"> Kaspersky OpenTIP: Clean</span>
 <!-- security-status:end -->
 </div>
 
