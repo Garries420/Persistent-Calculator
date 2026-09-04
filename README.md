@@ -1,8 +1,15 @@
 <div align="center">
   <img src="docs/Images/persistent-calculator.png" alt="Persistent Calculator" width="192">
   <h1>Persistent Calculator</h1>
+<!-- security-status:start -->
   <a href="https://github.com/Garries420/Persistent-Calculator/releases/latest"><img src="https://img.shields.io/badge/release-v1.0-7c4dff" alt="release v1.0"></a>
+  &nbsp;&middot;&nbsp;
   <img src="https://img.shields.io/badge/platform-Windows-1674ea" alt="platform Windows">
+  &nbsp;&middot;&nbsp;
+  <span><img src="docs/Images/virustotal-shield.svg" alt="" width="15" height="15" align="absmiddle"> VirusTotal Pending</span>
+  &nbsp;&middot;&nbsp;
+  <span><img src="docs/Images/kaspersky-shield.svg" alt="" width="15" height="15" align="absmiddle"> Kaspersky OpenTIP: Pending</span>
+<!-- security-status:end -->
 </div>
 
 ## Screenshots

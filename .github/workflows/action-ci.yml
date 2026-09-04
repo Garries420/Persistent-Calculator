@@ -1,236 +1,224 @@
-name: Windows Calculator Continuous Integration Pipeline
-run-name: WinCalc-CI-0.${{ github.run_number }}
+name: Release validation
+run-name: Validate v${{ inputs.version }} at ${{ github.sha }}
+
 on:
-  push:
-    branches: [main, release/**, feature/**]
-  pull_request:
-    branches: [main, release/**, feature/**]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix (for example, 1.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-validation-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  installer:
-    name: Build custom installer
-    runs-on: windows-2025-vs2026
+  validateRelease:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      buildVersion: ${{ steps.version.outputs.buildVersion }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '10.0.x'
-    - name: Restore installer
-      run: dotnet restore ./installer/PersistentCalculator.Installer/PersistentCalculator.Installer.csproj --configfile ./nuget.config
-      shell: pwsh
-    - name: Publish installer
-      run: |
-        dotnet publish ./installer/PersistentCalculator.Installer/PersistentCalculator.Installer.csproj `
-          --configuration Release `
-          --no-restore `
-          --output ./output/installer `
-          -p:DebugType=None `
-          -p:DebugSymbols=false
-      shell: pwsh
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Persistent-Calculator-Installer
-        path: ./output/installer
+      - uses: actions/checkout@v4
+      - id: version
+        name: Verify version and exact release commit
+        shell: pwsh
+        run: |
+          $requestedVersion = '${{ inputs.version }}'.Trim()
+          if ($requestedVersion -notmatch '^\d+\.\d+$') {
+            throw 'Version must contain only a major and minor number, such as 1.1.'
+          }
+          if ('${{ github.ref_type }}' -ne 'tag') {
+            throw 'Release validation must be dispatched from the release tag, not a branch.'
+          }
+          $expectedTag = "v$requestedVersion"
+          if ('${{ github.ref_name }}' -ne $expectedTag) {
+            throw "This run was dispatched from '${{ github.ref_name }}', but '$expectedTag' is required."
+          }
+          $projectVersion = (Get-Content -LiteralPath ./VERSION -Raw).Trim()
+          if ($projectVersion -ne $requestedVersion) {
+            throw "VERSION contains '$projectVersion', but this run requested '$requestedVersion'."
+          }
+          $revision = [int]('${{ github.run_number }}') % 65535
+          "buildVersion=$requestedVersion.0.$revision" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Validating tag $expectedTag at commit ${{ github.sha }}."
 
   verifyCodeStyle:
-    name: Verify code style (IDE0003)
+    name: Verify code style
+    needs: validateRelease
     runs-on: windows-2025-vs2026
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
-      name: Setup .NET SDK
-      with:
-        dotnet-version: '10.0.x'
-    - run: ./build/scripts/VerifyCodeStyle.ps1
-      shell: pwsh
-      name: Verify no unnecessary this. (IDE0003)
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Verify no unnecessary this. (IDE0003)
+        shell: pwsh
+        run: ./build/scripts/VerifyCodeStyle.ps1
 
-  defineBuilds:
-    name: Define builds
+  installer:
+    name: Build custom installer
+    needs: validateRelease
     runs-on: windows-2025-vs2026
-    env:
-      isPR: ${{ github.event_name == 'pull_request' }}
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      platformList: ${{ steps.platformList.outputs.platformList }}
-      unitTestPlatformList: ${{ steps.unitTestPlatformList.outputs.unitTestPlatformList }}
     steps:
-      - name: Generate version number
-        id: version
-        run: |
-          # Keep the user-facing release at 1.0 while giving each CI package
-          # a monotonic fourth MSIX version component.
-          $revision = [int]("${{ github.run_number }}") % 65535
-          $version = "1.0.0.$revision"
-          "version=`"$version`"" | Out-File $env:GITHUB_OUTPUT -Append
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore the release installer
         shell: pwsh
-      - name: Choose platforms to build
-        id: platformList
-        run: |
-          if ($env:isPR -eq $false) {
-            'platformList=["x64", "x86", "ARM64"]' | Out-File $env:GITHUB_OUTPUT -Append
-            echo 'Build all platforms.'
-          }
-          else {
-            'platformList=["x64"]' | Out-File $env:GITHUB_OUTPUT -Append
-            echo 'Build x64 only.'
-          }
+        run: dotnet restore ./installer/Official/PersistentCalculator.OfficialInstaller/PersistentCalculator.OfficialInstaller.csproj --configfile ./nuget.config
+      - name: Build the release installer
         shell: pwsh
-      - name: Choose platforms for unit test
-        id: unitTestPlatformList
         run: |
-          if ($env:isPR -eq $false){
-            'unitTestPlatformList=["x64", "x86"]' | Out-File $env:GITHUB_OUTPUT -Append
-            echo 'Test x64, x86'
-          }
-          else{
-            'unitTestPlatformList=["x64"]' | Out-File $env:GITHUB_OUTPUT -Append
-            echo 'Test x64'
-          }
-        shell: pwsh
+          dotnet build ./installer/Official/PersistentCalculator.OfficialInstaller/PersistentCalculator.OfficialInstaller.csproj `
+            --configuration Release `
+            --no-restore `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
 
   build:
-    needs: defineBuilds
-    name: Build
+    name: Build ${{ matrix.platform }}
+    needs: validateRelease
     runs-on: windows-2025-vs2026
     strategy:
+      fail-fast: false
       matrix:
-        platform: ${{ fromJSON(needs.defineBuilds.outputs.platformList) }}
+        platform: [x64, ARM64]
     env:
-      buildVersion: ${{ fromJSON(needs.defineBuilds.outputs.version) }}
+      buildVersion: ${{ needs.validateRelease.outputs.buildVersion }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: microsoft/setup-msbuild@v2
-      name: Setup msbuild
-    - uses: nuget/setup-nuget@v2
-      name: Use nuget 6.x
-      with:
-        nuget-version: '6.x'
-    - run: |
-        ./build/scripts/UpdateAppxManifestVersion.ps1 `
-          -AppxManifest ./src/Calculator/Package.appxmanifest `
-          -Version ${{ env.buildVersion }}
-      shell: pwsh
-      name: Set version number in AppxManifest
-    - run: |
-        msbuild ./src/Calculator.slnx `
-          -restore `
-          -p:RestorePackagesConfig=true `
-          -bl:${{ github.workspace }}/output/Calculator.binlog `
-          -p:OutDir=${{ github.workspace }}\output\ `
-          -p:Platform=${{ matrix.platform }} `
-          -p:Configuration=Release `
-          -p:GenerateProjectSpecificOutputFolder=true `
-          -p:Version=${{ env.buildVersion }} `
-          -maxCpuCount `
-          -t:Publish `
-          -p:PublishDir=${{ github.workspace }}\output\publish\
-      shell: pwsh
-      name: Build calculator.slnx
-    - uses: actions/upload-artifact@v4
-      name: Upload build outputs
-      with:
-        name: Build-${{ matrix.platform }}
-        path: ${{ github.workspace }}/output
-    - uses: actions/upload-artifact@v4
-      with:
-        name: Tools-${{ matrix.platform }}
-        path: ${{ github.workspace }}/build/scripts/SignTestApp.ps1
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+        name: Setup MSBuild
+      - uses: nuget/setup-nuget@v2
+        name: Use NuGet 6.x
+        with:
+          nuget-version: '6.x'
+      - name: Set version number in AppxManifest
+        shell: pwsh
+        run: |
+          ./build/scripts/UpdateAppxManifestVersion.ps1 `
+            -AppxManifest ./src/Calculator/Package.appxmanifest `
+            -Version ${{ env.buildVersion }}
+      - name: Build Calculator.slnx
+        shell: pwsh
+        run: |
+          msbuild ./src/Calculator.slnx `
+            -restore `
+            -p:RestorePackagesConfig=true `
+            -bl:${{ github.workspace }}/output/Calculator.binlog `
+            -p:OutDir=${{ github.workspace }}\output\ `
+            -p:Platform=${{ matrix.platform }} `
+            -p:Configuration=Release `
+            -p:GenerateProjectSpecificOutputFolder=true `
+            -p:Version=${{ env.buildVersion }} `
+            -maxCpuCount `
+            -t:Publish `
+            -p:PublishDir=${{ github.workspace }}\output\publish\
+      - name: Stage the x64 test helper
+        if: matrix.platform == 'x64'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path '${{ github.workspace }}/output/ci-tools' -Force | Out-Null
+          Copy-Item -LiteralPath ./build/scripts/SignTestApp.ps1 -Destination '${{ github.workspace }}/output/ci-tools/SignTestApp.ps1'
+      - name: Share x64 output with the test jobs
+        if: matrix.platform == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: x64-build-for-tests
+          path: |
+            ${{ github.workspace }}/output/Calculator
+            ${{ github.workspace }}/output/CalculatorUnitTests
+            ${{ github.workspace }}/output/publish
+            ${{ github.workspace }}/output/ci-tools
+          retention-days: 1
 
   unitTests:
-    needs: [defineBuilds, build]
+    name: Run unit tests x64
+    needs: build
     runs-on: windows-2025-vs2026
-    name: Run unit tests
-    strategy:
-      matrix:
-        platform: ${{ fromJSON(needs.defineBuilds.outputs.unitTestPlatformList) }}
     env:
       testDir: ${{ github.workspace }}/download/CalculatorUnitTests/AppPackages/CalculatorUnitTests_Test
     steps:
-    - uses: actions/download-artifact@v4
-      name: Download build outputs
-      with:
-        name: Build-${{ matrix.platform }}
-        path: ${{ github.workspace }}/download
-    - uses: actions/download-artifact@v4
-      name: Download tools
-      with:
-        name: Tools-${{ matrix.platform }}
-        path: ${{ github.workspace }}/download/tools
-    - run: |
-        ${{ github.workspace }}/download/tools/SignTestApp.ps1 -AppToSign ${{ env.testDir }}/CalculatorUnitTests.msix
-      shell: pwsh
-      name: Install test certificate
-    - uses: ilammy/msvc-dev-cmd@v1  # this is a workaround because microsoft/vstest-action is broken.
-      name: Setup dev tools
-    - run: vstest.console.exe ${{ env.testDir }}/CalculatorUnitTests.msix /Platform:${{ matrix.platform }}
-      name: Run unit tests
-        
+      - name: Download the required x64 build
+        uses: actions/download-artifact@v4
+        with:
+          name: x64-build-for-tests
+          path: ${{ github.workspace }}/download
+      - name: Install test certificate
+        shell: pwsh
+        run: |
+          & '${{ github.workspace }}/download/ci-tools/SignTestApp.ps1' `
+            -AppToSign '${{ env.testDir }}/CalculatorUnitTests.msix'
+      - uses: ilammy/msvc-dev-cmd@v1
+        name: Setup test tools
+      - name: Run unit tests
+        run: vstest.console.exe ${{ env.testDir }}/CalculatorUnitTests.msix /Platform:x64
+
   uiTests:
+    name: Run UI tests x64
     needs: build
     runs-on: windows-2025-vs2026
-    name: Run UI tests (x64)
     env:
       appDir: ${{ github.workspace }}/download/Calculator/AppPackages/Calculator*_Test
       pubDir: ${{ github.workspace }}/download/publish
     steps:
-    - uses: actions/download-artifact@v4
-      name: Download build outputs
-      with:
-        name: Build-x64
-        path: ${{ github.workspace }}/download
-    - uses: actions/download-artifact@v4
-      name: Download tools
-      with:
-        name: Tools-x64
-        path: ${{ github.workspace }}/download/tools
-    - run: |
-        Set-DisplayResolution -Width 1920 -Height 1080 -Force
-      shell: pwsh
-      name: Set screen resolution
-    - run: |
-        ${{ github.workspace }}/download/tools/SignTestApp.ps1 `
-          -AppToSign '${{ env.appDir }}/Calculator_*.msixbundle' `
-          -Publisher 'CN=Garries420'
-        ${{ env.appDir }}/Add-AppDevPackage.ps1 -Force
-      shell: powershell
-      name: Install app
-    - run: |
-        Invoke-WebRequest 'https://github.com/microsoft/WinAppDriver/releases/download/v1.2.1/WindowsApplicationDriver_1.2.1.msi' `
-          -OutFile (New-Item -Path '${{ github.workspace }}/download2/wad.msi' -Force)
-        cd ${{ github.workspace }}/download2
-        msiexec.exe /i wad.msi /quiet /passive
-      shell: powershell
-      name: Install WindowsApplicationDriver
-    - uses: ilammy/msvc-dev-cmd@v1  # this is a workaround because microsoft/vstest-action is broken.
-      name: Setup dev tools
-    - run: |
-        vstest.console.exe ${{ github.workspace }}\download\publish\CalculatorUITests.dll `
-          /Platform:x64 `
-          /Settings:${{ github.workspace }}\download\publish\CalculatorUITests.ci.runsettings
-      shell: pwsh
-      name: Run UI tests
-    - if: failure()
-      name: Report calculator activation failures
-      shell: pwsh
-      run: |
-        $startTime = (Get-Date).AddMinutes(-30)
-        $logs = @(
-          'Application',
-          'Microsoft-Windows-AppModel-Runtime/Admin',
-          'Microsoft-Windows-TWinUI/Operational'
-        )
-        foreach ($log in $logs) {
-          try {
-            Write-Host "==== $log ===="
-            Get-WinEvent -FilterHashtable @{ LogName = $log; StartTime = $startTime } -MaxEvents 250 -ErrorAction Stop |
-              Where-Object { $_.Message -match 'Calculator|Garries420.PersistentCalculator' } |
-              Select-Object TimeCreated, Id, LevelDisplayName, ProviderName, Message |
-              Format-List |
-              Out-String -Width 4096 |
-              Write-Host
+      - name: Download the required x64 build
+        uses: actions/download-artifact@v4
+        with:
+          name: x64-build-for-tests
+          path: ${{ github.workspace }}/download
+      - name: Set screen resolution
+        shell: pwsh
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
+      - name: Install app
+        shell: powershell
+        run: |
+          & '${{ github.workspace }}/download/ci-tools/SignTestApp.ps1' `
+            -AppToSign '${{ env.appDir }}/Calculator_*.msixbundle' `
+            -Publisher 'CN=Garries420'
+          & '${{ env.appDir }}/Add-AppDevPackage.ps1' -Force
+      - name: Install WindowsApplicationDriver
+        shell: powershell
+        run: |
+          Invoke-WebRequest 'https://github.com/microsoft/WinAppDriver/releases/download/v1.2.1/WindowsApplicationDriver_1.2.1.msi' `
+            -OutFile (New-Item -Path '${{ github.workspace }}/download2/wad.msi' -Force)
+          Set-Location '${{ github.workspace }}/download2'
+          msiexec.exe /i wad.msi /quiet /passive
+      - uses: ilammy/msvc-dev-cmd@v1
+        name: Setup test tools
+      - name: Run UI tests
+        shell: pwsh
+        run: |
+          vstest.console.exe '${{ github.workspace }}\download\publish\CalculatorUITests.dll' `
+            /Platform:x64 `
+            /Settings:'${{ github.workspace }}\download\publish\CalculatorUITests.ci.runsettings'
+      - if: failure()
+        name: Report calculator activation failures
+        shell: pwsh
+        run: |
+          $startTime = (Get-Date).AddMinutes(-30)
+          $logs = @(
+            'Application',
+            'Microsoft-Windows-AppModel-Runtime/Admin',
+            'Microsoft-Windows-TWinUI/Operational'
+          )
+          foreach ($log in $logs) {
+            try {
+              Write-Host "==== $log ===="
+              Get-WinEvent -FilterHashtable @{ LogName = $log; StartTime = $startTime } -MaxEvents 250 -ErrorAction Stop |
+                Where-Object { $_.Message -match 'Calculator|Garries420.PersistentCalculator' } |
+                Select-Object TimeCreated, Id, LevelDisplayName, ProviderName, Message |
+                Format-List |
+                Out-String -Width 4096 |
+                Write-Host
+            }
+            catch {
+              Write-Warning "Could not read ${log}: $($_.Exception.Message)"
+            }
           }
-          catch {
-            Write-Warning "Could not read ${log}: $($_.Exception.Message)"
-          }
-        }

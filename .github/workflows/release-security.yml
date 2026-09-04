@@ -1,0 +1,176 @@
+name: Release security reports
+run-name: Security reports for ${{ github.event.release.tag_name || inputs.tag }}
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to verify (the manual path is for retries and the v1.0 backfill)
+        required: true
+        default: v1.0
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-security-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  scanReleaseInstaller:
+    name: Scan exact release installer
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - id: release
+        name: Resolve release, installer, SHA-256, and validation run
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'release') {
+            '${{ github.event.release.tag_name }}'
+          }
+          else {
+            '${{ inputs.tag }}'
+          }
+          if ($tag -notmatch '^v(?<version>\d+\.\d+)$') {
+            throw "Release tag '$tag' must use the vMAJOR.MINOR format."
+          }
+          $version = $Matches.version
+
+          git fetch origin "refs/tags/${tag}:refs/tags/${tag}" --force
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch release tag $tag."
+          }
+          $releaseCommit = (git rev-list -n 1 $tag).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $releaseCommit -notmatch '^[0-9a-f]{40}$') {
+            throw "Could not resolve $tag to an exact commit."
+          }
+
+          $release = gh release view $tag --json tagName,isDraft,isPrerelease,assets | ConvertFrom-Json -Depth 20
+          if ($LASTEXITCODE -ne 0 -or $release.isDraft) {
+            throw "Release $tag does not exist as a published release."
+          }
+          $installers = @($release.assets | Where-Object {
+            $_.name -match '(?i)(installer|setup).*\.exe$'
+          })
+          if ($installers.Count -ne 1) {
+            throw "Release $tag must contain exactly one installer executable; found $($installers.Count)."
+          }
+
+          New-Item -ItemType Directory -Path ./release-installer -Force | Out-Null
+          gh release download $tag --pattern "$($installers[0].name)" --dir ./release-installer --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not download the installer asset from release $tag."
+          }
+          $installerPath = (Resolve-Path -LiteralPath (Join-Path ./release-installer $installers[0].name)).Path
+          $sha256 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $isV1Backfill = $tag -eq 'v1.0' -and $sha256 -eq 'abfcb7c7751ef54182510e4be68cfe485542134a74a0d8a2fc31c152b4076d83'
+          if (-not $isV1Backfill) {
+            $runs = @(gh run list `
+              --workflow action-ci.yml `
+              --commit $releaseCommit `
+              --event workflow_dispatch `
+              --limit 100 `
+              --json conclusion,headSha,status,url | ConvertFrom-Json -Depth 20)
+            $successfulRun = @($runs | Where-Object {
+              $_.headSha.ToLowerInvariant() -eq $releaseCommit -and
+              $_.status -eq 'completed' -and
+              $_.conclusion -eq 'success'
+            } | Select-Object -First 1)
+            if ($successfulRun.Count -eq 0) {
+              throw "No successful release-validation run exists for the exact $tag commit ($releaseCommit)."
+            }
+          }
+          else {
+            Write-Host 'Using the one-time v1.0 backfill exception after matching the immutable release installer SHA-256.'
+          }
+
+          "tag=$tag" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$version" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "release_commit=$releaseCommit" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "installer_path=$installerPath" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=$sha256" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Release installer SHA-256: $sha256"
+
+      - name: Mark the new release reports as pending
+        shell: pwsh
+        run: |
+          ./.github/scripts/Update-ReadmeSecurityStatus.ps1 `
+            -Version '${{ steps.release.outputs.version }}' `
+            -VirusTotalText 'VirusTotal Pending' `
+            -VirusTotalUrl 'https://www.virustotal.com/gui/file/${{ steps.release.outputs.sha256 }}/detection' `
+            -KasperskyText 'Kaspersky OpenTIP: Pending'
+          git diff --quiet -- README.md
+          if ($LASTEXITCODE -eq 1) {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add README.md
+            git commit -m 'Mark release security reports pending [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit the pending security status.' }
+            git pull --rebase origin main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not rebase the pending security status onto main.' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not push the pending security status.' }
+          }
+          elseif ($LASTEXITCODE -ne 0) {
+            throw 'Could not inspect the README changes.'
+          }
+
+      - id: scanners
+        name: Reuse or run VirusTotal and Kaspersky OpenTIP reports
+        shell: pwsh
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          KASPERSKY_OPENTIP_API_TOKEN: ${{ secrets.KASPERSKY_OPENTIP_API_TOKEN }}
+        run: |
+          ./.github/scripts/Get-ReleaseSecurityStatus.ps1 `
+            -InstallerPath '${{ steps.release.outputs.installer_path }}'
+
+      - name: Publish the verified scanner status
+        if: always() && steps.scanners.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          ./.github/scripts/Update-ReadmeSecurityStatus.ps1 `
+            -Version '${{ steps.release.outputs.version }}' `
+            -VirusTotalText '${{ steps.scanners.outputs.virustotal_text }}' `
+            -VirusTotalUrl '${{ steps.scanners.outputs.virustotal_url }}' `
+            -KasperskyText '${{ steps.scanners.outputs.kaspersky_text }}' `
+            -KasperskyUrl '${{ steps.scanners.outputs.kaspersky_url }}'
+          git diff --quiet -- README.md
+          if ($LASTEXITCODE -eq 1) {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add README.md
+            git commit -m 'Update release security reports [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit the final security status.' }
+            git pull --rebase origin main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not rebase the final security status onto main.' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not push the final security status.' }
+          }
+          elseif ($LASTEXITCODE -ne 0) {
+            throw 'Could not inspect the README changes.'
+          }
+
+      - name: Require final scanner results
+        if: always() && steps.scanners.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          if ('${{ steps.scanners.outputs.virustotal_complete }}' -ne 'true') {
+            throw 'VirusTotal did not return a completed report. The README was left with a non-success status.'
+          }
+          if ('${{ steps.scanners.outputs.kaspersky_complete }}' -ne 'true') {
+            throw 'Kaspersky OpenTIP did not return a completed verdict. The README was left with a non-success status.'
+          }
