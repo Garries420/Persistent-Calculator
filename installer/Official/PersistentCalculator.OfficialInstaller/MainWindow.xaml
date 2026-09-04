@@ -1,0 +1,133 @@
+<Window x:Class="PersistentCalculator.OfficialInstaller.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Persistent Calculator Installer"
+        Width="860"
+        Height="650"
+        MinWidth="760"
+        MinHeight="590"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource PrimaryTextBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="30,22">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Image Width="62" Height="62" Source="/Assets/PersistentCalculator-96.png" Margin="0,0,18,0"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock FontSize="28" FontWeight="SemiBold" Text="Persistent Calculator"/>
+                    <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" Text="Official installer · Version 1.0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="SetupPanel" Grid.Row="1" Margin="36,28,36,20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock FontSize="22" FontWeight="SemiBold" Text="Choose where to install"/>
+                <TextBlock Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                           Text="For the most reliable updates and shortcuts, we recommend installing Persistent Calculator in the Program Files folder shown below. You may choose another dedicated folder if you prefer."/>
+            </StackPanel>
+
+            <Border Grid.Row="1" Margin="0,22,0,0" Padding="20" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8">
+                <StackPanel>
+                    <TextBlock FontWeight="SemiBold" Text="Installation location"/>
+                    <Grid Margin="0,9,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="InstallPathTextBox" Height="38" VerticalContentAlignment="Center" Padding="10,0" FontSize="14"/>
+                        <Button Grid.Column="1" Margin="10,0,0,0" MinWidth="92" Content="Browse…" Click="BrowseButton_Click"/>
+                    </Grid>
+                    <TextBlock Margin="0,10,0,0" Foreground="{DynamicResource SecondaryTextBrush}" FontSize="12" TextWrapping="Wrap"
+                               Text="This folder stores the core files for the calculator. For currency rates and history, look for &quot;Persistent Calculator&quot; in your Documents folder."/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="2" Margin="0,16,0,0" Padding="20" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8">
+                <StackPanel>
+                    <TextBlock FontWeight="SemiBold" Text="Shortcuts"/>
+                    <CheckBox x:Name="DesktopShortcutCheckBox" Margin="0,12,0,0" IsChecked="True" Content="Create a Desktop shortcut"/>
+                    <CheckBox x:Name="StartMenuShortcutCheckBox" Margin="0,10,0,0" IsChecked="True" Content="Add Persistent Calculator to the Start menu"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="ProgressPanel" Grid.Row="1" Margin="30,24,30,18" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="ProgressHeading" FontSize="22" FontWeight="SemiBold" Text="Installing Persistent Calculator"/>
+                    <TextBlock x:Name="ProgressStatus" Margin="0,6,14,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" Text="Preparing the local installation package…"/>
+                </StackPanel>
+                <TextBlock x:Name="ProgressPercent" Grid.Column="1" VerticalAlignment="Bottom" FontSize="24" FontWeight="SemiBold" Text="0%"/>
+            </Grid>
+            <ProgressBar x:Name="OverallProgress" Grid.Row="1" Height="10" Margin="0,16,0,0" Minimum="0" Maximum="100" Value="0"/>
+            <TextBlock Grid.Row="2" Margin="0,16,0,8" FontWeight="SemiBold" Text="Installation progress"/>
+            <ListBox x:Name="ActivityList" Grid.Row="3" ItemsSource="{Binding ActivityItems}" FontFamily="Consolas" FontSize="12"
+                     Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource PrimaryTextBrush}"
+                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" HorizontalContentAlignment="Stretch"
+                     SelectionMode="Extended" ItemContainerStyle="{StaticResource ActivityListItemStyle}"
+                     KeyDown="ActivityList_KeyDown" PreviewMouseRightButtonDown="ActivityList_PreviewMouseRightButtonDown">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="76"/>
+                                <ColumnDefinition Width="52"/>
+                                <ColumnDefinition Width="82"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding TimeText}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding PercentText}" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="2" Text="{Binding ActionText}"/>
+                            <TextBlock Grid.Column="3" Text="{Binding DetailText}" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+                <ListBox.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Copy selected entries" Click="CopyEntriesMenuItem_Click"/>
+                    </ContextMenu>
+                </ListBox.ContextMenu>
+            </ListBox>
+        </Grid>
+
+        <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="24,17">
+            <Grid>
+                <StackPanel x:Name="SetupButtons" Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Content="Cancel" Margin="0,0,10,0" Click="CancelButton_Click"/>
+                    <Button Content="Install" Style="{StaticResource PrimaryButtonStyle}" Click="InstallButton_Click"/>
+                </StackPanel>
+                <StackPanel x:Name="CompletionButtons" Orientation="Horizontal" HorizontalAlignment="Center" Visibility="Collapsed">
+                    <Button Content="Close" Margin="0,0,10,0" Click="CloseButton_Click"/>
+                    <Button x:Name="PrimaryActionButton" Content="Open calculator" Style="{StaticResource PrimaryButtonStyle}" Click="PrimaryActionButton_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

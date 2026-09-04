@@ -1,0 +1,61 @@
+<UserControl x:Class="CalculatorApp.Changelog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Padding="12,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button AutomationProperties.Name="Back to calculator"
+                    Click="BackButton_Click"
+                    Content="&#xE72B;"
+                    FontFamily="Segoe MDL2 Assets"
+                    Style="{StaticResource SquareIconButtonStyle}"
+                    ToolTipService.ToolTip="Back to calculator"/>
+            <StackPanel Grid.Column="1"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Center">
+                <TextBlock FontSize="22"
+                           FontWeight="SemiBold"
+                           Text="What's new"/>
+                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           FontSize="12"
+                           Text="Persistent Calculator release notes"/>
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1"
+                      Padding="16,8,16,20"
+                      VerticalScrollBarVisibility="Auto">
+            <Border Padding="18"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <StackPanel Spacing="11">
+                    <TextBlock FontSize="22" FontWeight="SemiBold" Text="Version 1.0"/>
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Initial release · current version"
+                               TextWrapping="Wrap"/>
+                    <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                    <TextBlock Text="• Windows-inspired calculator built from Microsoft's open-source Windows Calculator."
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="• Added saved history for every calculator and conversion mode."
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="• Added an in-app changelog for release notes."
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="• Added a custom installer for the app and its persistent data folder."
+                               TextWrapping="Wrap"/>
+                    <TextBlock Text="• Added automatic update checks plus a manual update button."
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

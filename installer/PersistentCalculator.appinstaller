@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstaller
+    xmlns="http://schemas.microsoft.com/appx/appinstaller/2018"
+    Uri="https://github.com/Garries420/Persistent-Calculator/releases/latest/download/PersistentCalculator.appinstaller"
+    Version="1.0.0.0">
+  <MainBundle
+      Name="Garries420.PersistentCalculator"
+      Publisher="CN=Garries420"
+      Version="1.0.0.0"
+      Uri="https://github.com/Garries420/Persistent-Calculator/releases/latest/download/PersistentCalculator.msixbundle" />
+  <UpdateSettings>
+    <OnLaunch HoursBetweenUpdateChecks="0" ShowPrompt="true" UpdateBlocksActivation="false" />
+    <AutomaticBackgroundTask />
+    <ForceUpdateFromAnyVersion>true</ForceUpdateFromAnyVersion>
+  </UpdateSettings>
+</AppInstaller>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+         xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+         xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+         xmlns:iot2="http://schemas.microsoft.com/appx/manifest/iot/windows10/2"
+         IgnorableNamespaces="uap uap3 uap5 mp desktop4 iot2">
+    <Identity Name="Garries420.PersistentCalculator" Publisher="CN=Garries420" Version="1.0.0.0" />
+    <mp:PhoneIdentity PhoneProductId="f836a331-6a62-4d23-bd20-5bd6d9c6a3f9" PhonePublisherId="7563c19d-a36d-40bf-ae6e-a7de3d19870f" />
+    <Properties>
+        <DisplayName>Persistent Calculator</DisplayName>
+        <PublisherDisplayName>Garries420</PublisherDisplayName>
+        <Logo>Assets\CalculatorStoreLogo.png</Logo>
+    </Properties>
+    <Dependencies>
+        <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+    </Dependencies>
+    <Resources>
+        <Resource Language="x-generate" />
+    </Resources>
+    <Applications>
+        <Application Id="App"
+                     Executable="$targetnametoken$.exe"
+                     EntryPoint="Calculator.App"
+                     desktop4:SupportsMultipleInstances="true"
+                     iot2:SupportsMultipleInstances="true">
+            <uap:VisualElements DisplayName="Persistent Calculator" Square150x150Logo="Assets\CalculatorMedTile.png" Square44x44Logo="Assets\CalculatorAppList.png" Description="Persistent Calculator 1.0" BackgroundColor="#0078D4">
+                <uap:DefaultTile ShortName="Persistent Calculator" Square310x310Logo="Assets\CalculatorLargeTile.png" Wide310x150Logo="Assets\CalculatorWideTile.png" Square71x71Logo="Assets\CalculatorSmallTile.png">
+                    <uap:ShowNameOnTiles>
+                        <uap:ShowOn Tile="square150x150Logo" />
+                        <uap:ShowOn Tile="wide310x150Logo" />
+                        <uap:ShowOn Tile="square310x310Logo" />
+                    </uap:ShowNameOnTiles>
+                </uap:DefaultTile>
+                <uap:SplashScreen Image="Assets\CalculatorSplashScreen.png" uap5:Optional="true" BackgroundColor="#0078D4" />
+            </uap:VisualElements>
+            <Extensions>
+                <uap:Extension Category="windows.protocol">
+                    <uap:Protocol Name="persistent-calculator">
+                        <uap:Logo>Assets\CalculatorAppList.png</uap:Logo>
+                    </uap:Protocol>
+                </uap:Extension>
+                <uap:Extension Category="windows.fileTypeAssociation">
+                    <uap:FileTypeAssociation Name="persistentcalculator.data">
+                        <uap:DisplayName>Persistent Calculator data</uap:DisplayName>
+                        <uap:SupportedFileTypes>
+                            <uap:FileType>.txt</uap:FileType>
+                            <uap:FileType>.json</uap:FileType>
+                        </uap:SupportedFileTypes>
+                    </uap:FileTypeAssociation>
+                </uap:Extension>
+            </Extensions>
+        </Application>
+    </Applications>
+    <Capabilities>
+        <Capability Name="internetClient" />
+        <uap:Capability Name="documentsLibrary" />
+    </Capabilities>
+</Package>
