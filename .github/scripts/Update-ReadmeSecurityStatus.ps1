@@ -23,15 +23,19 @@ function ConvertTo-HtmlText([string]$Value) {
     return [System.Net.WebUtility]::HtmlEncode($Value)
 }
 
-function New-ScannerStatusHtml(
-    [string]$IconPath,
-    [string]$Text,
+function New-ScannerBadgeHtml(
+    [string]$Label,
+    [string]$Status,
+    [string]$Color,
     [string]$Url
 ) {
-    $safeText = ConvertTo-HtmlText $Text
-    $content = "<img src=`"$IconPath`" alt=`"`" width=`"15`" height=`"15`" align=`"absmiddle`"> $safeText"
+    $badgeLabel = [Uri]::EscapeDataString($Label.Replace('-', '--'))
+    $badgeStatus = [Uri]::EscapeDataString($Status.Replace('-', '--'))
+    $safeText = ConvertTo-HtmlText "$Label $Status"
+    $badgeUrl = "https://img.shields.io/badge/$badgeLabel-$badgeStatus-$Color"
+    $content = "<img src=`"$badgeUrl`" alt=`"$safeText`">"
     if ([string]::IsNullOrWhiteSpace($Url)) {
-        return "<span>$content</span>"
+        return $content
     }
 
     $uri = $null
@@ -44,17 +48,23 @@ function New-ScannerStatusHtml(
 }
 
 $readme = Get-Content -LiteralPath $ReadmePath -Raw
-$virusTotal = New-ScannerStatusHtml 'docs/Images/virustotal-shield.svg' $VirusTotalText $VirusTotalUrl
-$kaspersky = New-ScannerStatusHtml 'docs/Images/kaspersky-shield.svg' $KasperskyText $KasperskyUrl
+if ($VirusTotalText -notmatch '^VirusTotal\s+(?<status>.+)$') {
+    throw "Unexpected VirusTotal status text: $VirusTotalText"
+}
+$virusTotalStatus = $Matches.status
+if ($KasperskyText -notmatch '^Kaspersky OpenTIP:\s*(?<status>.+)$') {
+    throw "Unexpected Kaspersky OpenTIP status text: $KasperskyText"
+}
+$kasperskyStatus = $Matches.status
+
+$virusTotal = New-ScannerBadgeHtml 'VirusTotal' $virusTotalStatus '394eff' $VirusTotalUrl
+$kaspersky = New-ScannerBadgeHtml 'Kaspersky OpenTIP' $kasperskyStatus '00a88e' $KasperskyUrl
 
 $replacement = @"
 <!-- security-status:start -->
   <a href="https://github.com/Garries420/Persistent-Calculator/releases/latest"><img src="https://img.shields.io/badge/release-v$Version-7c4dff" alt="release v$Version"></a>
-  &nbsp;&middot;&nbsp;
   <img src="https://img.shields.io/badge/platform-Windows-1674ea" alt="platform Windows">
-  &nbsp;&middot;&nbsp;
   $virusTotal
-  &nbsp;&middot;&nbsp;
   $kaspersky
 <!-- security-status:end -->
 "@

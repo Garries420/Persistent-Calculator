@@ -3,12 +3,9 @@
   <h1>Persistent Calculator</h1>
 <!-- security-status:start -->
   <a href="https://github.com/Garries420/Persistent-Calculator/releases/latest"><img src="https://img.shields.io/badge/release-v1.0-7c4dff" alt="release v1.0"></a>
-  &nbsp;&middot;&nbsp;
   <img src="https://img.shields.io/badge/platform-Windows-1674ea" alt="platform Windows">
-  &nbsp;&middot;&nbsp;
-  <a href="https://www.virustotal.com/gui/file/abfcb7c7751ef54182510e4be68cfe485542134a74a0d8a2fc31c152b4076d83/detection"><img src="docs/Images/virustotal-shield.svg" alt="" width="15" height="15" align="absmiddle"> VirusTotal 2/69</a>
-  &nbsp;&middot;&nbsp;
-  <span><img src="docs/Images/kaspersky-shield.svg" alt="" width="15" height="15" align="absmiddle"> Kaspersky OpenTIP: Clean</span>
+  <a href="https://www.virustotal.com/gui/file/abfcb7c7751ef54182510e4be68cfe485542134a74a0d8a2fc31c152b4076d83/detection"><img src="https://img.shields.io/badge/VirusTotal-2%2F69-394eff" alt="VirusTotal 2/69"></a>
+  <img src="https://img.shields.io/badge/Kaspersky%20OpenTIP-Clean-00a88e" alt="Kaspersky OpenTIP Clean">
 <!-- security-status:end -->
 </div>
 
